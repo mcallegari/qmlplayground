@@ -1,7 +1,5 @@
 import QtQuick 2.0
 
-import "TreeUtils.js" as Utils
-
 ListView {
     id: treeModelView
     width: 350
@@ -10,8 +8,7 @@ ListView {
     delegate:
         Component {
             Loader {
-                width: 350 //parent.width
-                //height: 35
+                width: parent.width
                 source: hasChildren ? "NodeDelegate.qml" : "LeafDelegate.qml"
                 onLoaded: {
                     item.textLabel = label

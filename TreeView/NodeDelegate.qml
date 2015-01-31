@@ -1,7 +1,5 @@
 import QtQuick 2.0
 
-import "TreeUtils.js" as Utils
-
 Rectangle {
     id: nodeContainer
     width: 350
