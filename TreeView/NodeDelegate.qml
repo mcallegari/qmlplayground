@@ -12,12 +12,10 @@ Rectangle {
     property string textLabel
     property var folderChildren
     property bool isExpanded: false
-    property int childrenHeight
+    property int childrenHeight: 0
+    property int variableHeight: 0
 
-    onChildrenHeightChanged: {
-        console.log("Children height changed: " + childrenHeight)
-        console.log("Object: " + nodeContainer)
-    }
+    signal toggled(bool expanded, int newHeight)
 
     Image {
         width: 40
@@ -38,9 +36,8 @@ Rectangle {
         width: parent.width
         height: 35
         onClicked: {
-            console.log("Expanding node to " + childrenHeight)
-            console.log("Clicked object: " + nodeContainer)
             isExpanded = !isExpanded
+            nodeContainer.toggled(isExpanded, childrenHeight)
         }
     }
 
@@ -51,12 +48,20 @@ Rectangle {
         color: "black"
     }
 
+    function childToggled(expanded, height)
+    {
+        if (expanded)
+            variableHeight += height;
+        else
+            variableHeight -= height;
+    }
+
     ListView {
         id: nodeChildrenView
         visible: isExpanded
         x: 30
         y: nodeLabel.height
-        height: isExpanded ? childrenHeight : 0
+        height: isExpanded ? (childrenHeight + variableHeight) : 0
         model: folderChildren
         delegate:
             Component {
@@ -76,6 +81,10 @@ Rectangle {
                             item.lCapital = capital
                             item.lCurrency = currency
                         }
+                    }
+                    Connections {
+                         target: item
+                         onToggled: childToggled(item.isExpanded, item.childrenHeight)
                     }
                 }
         }
