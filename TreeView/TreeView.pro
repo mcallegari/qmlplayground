@@ -9,7 +9,7 @@ SOURCES += main.cpp \
 
 HEADERS += \
     app.h \
-    treemodel.h
+    treemodel.h \
     treemodelitem.h
 
 RESOURCES += qml.qrc
