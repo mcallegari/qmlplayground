@@ -1,0 +1,15 @@
+<RCC>
+    <qresource prefix="/">
+        <file>main.qml</file>
+        <file>DeferredRenderer.qml</file>
+        <file>FinalEffect.qml</file>
+        <file>SceneEffect.qml</file>
+        <file>GBuffer.qml</file>
+        <file>assets/suzanne.obj</file>
+        <file>assets/cone.obj</file>
+        <file>shaders/deferred.vert</file>
+        <file>shaders/deferred.frag</file>
+        <file>shaders/deferred_gl2.vert</file>
+        <file>shaders/deferred_gl2.frag</file>
+    </qresource>
+</RCC>
