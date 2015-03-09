@@ -153,8 +153,8 @@ Entity {
                     QQ2.SequentialAnimation {
                         loops: QQ2.Animation.Infinite
                         running: true
-                        QQ2.NumberAnimation {target: light3Translate; property: "dx"; to: 6; duration: 2000; easing.type: QQ2.Easing.Linear }
-                        QQ2.NumberAnimation {target: light3Translate; property: "dx"; to: -6; duration: 2000; easing.type: QQ2.Easing.Linear }
+                        QQ2.NumberAnimation {target: light3Translate; property: "dy"; to: 6; duration: 3000; easing.type: QQ2.Easing.Linear }
+                        QQ2.NumberAnimation {target: light3Translate; property: "dy"; to: -6; duration: 3000; easing.type: QQ2.Easing.Linear }
                     }
                 }
             }

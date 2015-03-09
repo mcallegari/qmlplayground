@@ -31,9 +31,9 @@ uniform PointLightBlock {
     PointLight pointLights[pointLightCount];
 };
 
-/*uniform SpotLightBlock {
+uniform SpotLightBlock {
     SpotLight spotLights[spotLightCount];
-};*/
+};
 
 void main()
 {
@@ -48,7 +48,7 @@ void main()
 	vec3 s = normalize(pointLights[i].position - pos);
 	lightColor += pointLights[i].color * (pointLights[i].intensity * max(dot(s, norm), 0.0));
     }
-/*
+
     for (int j = 0; j < spotLightCount; j++) {
         vec3 s = normalize(spotLights[j].position - pos);
         vec3 v = normalize(vec3(-pos));
@@ -58,7 +58,7 @@ void main()
         if( angle < cutoff )
             lightColor += spotLights[j].color * (spotLights[j].intensity * max(dot(s, norm), 0.0));
     }
-*/
-    lightColor /= float(pointLightCount);
+
+    lightColor /= float(pointLightCount + spotLightCount);
     fragColor = col * lightColor;
 } 
