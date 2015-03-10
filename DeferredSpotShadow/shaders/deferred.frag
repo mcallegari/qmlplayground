@@ -51,12 +51,15 @@ void main()
 
     for (int j = 0; j < spotLightCount; j++) {
         vec3 s = normalize(spotLights[j].position - pos);
-        vec3 v = normalize(vec3(-pos));
-        vec3 spotDir = normalize(spotLights[j].direction);
-        float angle = acos( dot(-s, spotDir) );
+        float angle = acos( dot(-s, spotLights[j].direction) );
         float cutoff = radians( clamp( spotLights[j].cutOffAngle, 0.0, 90.0 ) );
         if( angle < cutoff )
-            lightColor += spotLights[j].color * (spotLights[j].intensity * max(dot(s, norm), 0.0));
+        {
+            float spotFactor = pow( dot(-s, spotLights[j].direction), 5 ); // fixed attenuation of 5 degrees
+            vec3 v = normalize(vec3(-pos));
+
+            lightColor += spotLights[j].color * (spotFactor * spotLights[j].intensity * max(dot(s, norm), 0.0));
+        }
     }
 
     lightColor /= float(pointLightCount + spotLightCount);

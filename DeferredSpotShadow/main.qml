@@ -39,7 +39,7 @@ import Qt3D.Render 2.0
 import QtQuick 2.0 as QQ2
 
 Entity {
-    id : root
+    id : sceneRoot
 
     GBuffer {
         id : gBuffer
@@ -168,38 +168,10 @@ Entity {
             ]
         }
 
-        Entity {
+        SpotLightMesh {
             id: cone
-            Mesh {
-                id: coneMesh
-                source: "qrc:/assets/cone.obj"
-            }
-            Transform {
-                id: coneTransform
-                Translate {
-                    dy: 1
-                    dz: 1
-                    dx: -1
-                }
-            }
-            property Material material : Material {
-                effect : sceneMaterialEffect
-                parameters : Parameter { name : "meshColor"; value : "gray" }
-            }
-            property SpotLight light : SpotLight {
-                color : "green"
-                intensity : 2.0
-                direction: Qt.vector3d(0, -1, 0)
-                cutOffAngle: 30.0
-            }
-
-            components : [
-                coneMesh,
-                coneTransform,
-                material,
-                light,
-                sceneLayer
-            ]
+            sceneEffect: sceneMaterialEffect
+            pos3D: Qt.vector3d(-1, 1, 1)
         }
 
         Entity {

@@ -10,6 +10,7 @@ OTHER_FILES += \
     DeferredRenderer.qml \
     FinalEffect.qml \
     SceneEffect.qml \
+    SpotLightMesh.qml \
     GBuffer.qml
 
 RESOURCES += \
