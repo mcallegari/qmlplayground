@@ -37,47 +37,51 @@
 import Qt3D 2.0
 import Qt3D.Render 2.0
 
-Viewport {
-    rect : Qt.rect(0.0, 0.0, 1.0, 1.0)
+FrameGraph {
+    id: root
 
     property alias gBuffer : gBufferTargetSelector.target
     property alias camera : sceneCameraSelector.camera
 
-    LayerFilter {
-        layers : "scene"
+    activeFrameGraph: Viewport {
+        rect : Qt.rect(0.0, 0.0, 1.0, 1.0)
 
-        RenderTargetSelector {
-            id : gBufferTargetSelector
+        LayerFilter {
+            layers : "scene"
+
+            RenderTargetSelector {
+                id : gBufferTargetSelector
+
+                ClearBuffer {
+                    buffers: ClearBuffer.ColorDepthBuffer
+
+                    RenderPassFilter {
+                        id : geometryPass
+                        includes : Annotation { name : "pass"; value : "geometry" }
+
+                        CameraSelector {
+                            id : sceneCameraSelector
+                        }
+                    }
+                }
+            }
+        }
+
+        LayerFilter {
+            layers : "screenQuad"
 
             ClearBuffer {
                 buffers: ClearBuffer.ColorDepthBuffer
 
                 RenderPassFilter {
-                    id : geometryPass
-                    includes : Annotation { name : "pass"; value : "geometry" }
-
+                    id : finalPass
+                    includes : Annotation { name : "pass"; value : "final" }
                     CameraSelector {
-                        id : sceneCameraSelector
+                        camera: sceneCameraSelector.camera
                     }
                 }
+
             }
-        }
-    }
-
-    LayerFilter {
-        layers : "screenQuad"
-
-        ClearBuffer {
-            buffers: ClearBuffer.ColorDepthBuffer
-
-            RenderPassFilter {
-                id : finalPass
-                includes : Annotation { name : "pass"; value : "final" }
-                CameraSelector {
-                    camera: sceneCameraSelector.camera
-                }
-            }
-
         }
     }
 }

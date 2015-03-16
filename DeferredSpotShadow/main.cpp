@@ -35,6 +35,24 @@
 **
 ****************************************************************************/
 
+#include <QGuiApplication>
+#include <QQuickView>
+
+int main(int argc, char **argv)
+{
+    QGuiApplication app(argc, argv);
+
+    QQuickView view;
+
+    view.resize(900, 600);
+    view.setResizeMode(QQuickView::SizeRootObjectToView);
+    view.setSource(QUrl("qrc:/main.qml"));
+    view.show();
+
+    return app.exec();
+}
+
+/*
 #include <Qt3DCore/window.h>
 #include <Qt3DRenderer/qrenderaspect.h>
 #include <Qt3DInput/QInputAspect>
@@ -47,8 +65,6 @@ int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
 
-    //initializeAssetResources("../exampleresources/example-assets.qrb");
-
     Qt3D::Window view;
     Qt3D::Quick::QQmlAspectEngine engine;
 
@@ -59,8 +75,9 @@ int main(int argc, char* argv[])
     data.insert(QStringLiteral("surface"), QVariant::fromValue(static_cast<QSurface *>(&view)));
     data.insert(QStringLiteral("eventSource"), QVariant::fromValue(&view));
     engine.aspectEngine()->setData(data);
-    engine.setSource(QUrl("qrc:/main.qml"));
+    engine.setSource(QUrl("qrc:/DeferredScene.qml"));
     view.show();
 
     return app.exec();
 }
+*/

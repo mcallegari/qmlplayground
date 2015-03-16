@@ -59,7 +59,7 @@ Effect {
                         property ShaderDataArray spotLights: ShaderDataArray {
                             // hard coded lights until we have a way to filter
                             // ShaderData in a scene
-                            values: [ cone.light ]
+                            values: [ coneLight.light ]
                         }
                     }
                 }

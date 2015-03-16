@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2014 Klaralvdalens Datakonsult AB (KDAB).
+** Copyright (C) 2015 Klaralvdalens Datakonsult AB (KDAB).
 ** Contact: http://www.qt-project.org/legal
 **
 ** This file is part of the Qt3D module of the Qt Toolkit.
@@ -34,204 +34,126 @@
 **
 ****************************************************************************/
 
-import Qt3D 2.0
-import Qt3D.Render 2.0
-import QtQuick 2.0 as QQ2
+import QtQuick 2.0
+import QtQuick.Controls 1.0
+import QtQuick.Layouts 1.0
+import QtQuick.Scene3D 2.0
 
-Entity {
-    id : sceneRoot
+Item {
+    id: root
 
-    GBuffer {
-        id : gBuffer
-    }
+    Rectangle {
+        id: sceneBox
+        width: Math.min(parent.width, parent.height)
+        height: width
 
-    components : FrameGraph {
-        id : deferredFrameGraphComponent
-        activeFrameGraph: DeferredRenderer {
-            camera : camera
-            gBuffer: gBuffer
+        Scene3D {
+            anchors.fill: parent
+            focus: true
+            aspects: "input"
+
+            DeferredScene {
+                id: defScene
+            }
         }
     }
 
-    Configuration  {
-        controlledCamera: camera
-    }
+    Rectangle {
+        id: rightControls
+        x: sceneBox.width
+        width: parent.width - sceneBox.width
+        height: parent.height
 
-    Entity {
-        id : screenQuadEntity
-        components : [
-            Layer {
-                names : "screenQuad"
-            },
-            PlaneMesh {
-                width: 2.0
-                height: 2.0
-                meshResolution: Qt.size(2, 2)
-            },
-            Transform { // We rotate the plane so that it faces us
-                Rotate {
-                    axis : Qt.vector3d(1.0, 0.0, 0.0)
-                    angle : 90
+        color: "lightgray"
+
+        Row {
+            x: 20
+            y: 20
+            spacing: 10
+
+            Button {
+                text: qsTr("Add mesh")
+                onClicked: {
+                    defScene.addGenericMesh("qrc:/assets/suzanne.obj");
                 }
-            },
-            Material {
-                parameters : [
-                    Parameter { name: "color"; value : gBuffer.color },
-                    Parameter { name: "position"; value : gBuffer.position },
-                    Parameter { name: "normal"; value : gBuffer.normal },
-                    Parameter { name: "winSize"; value : Qt.size(1024, 1024) }
-                ]
-                effect : FinalEffect {}
             }
-        ]
-
-    }
-
-    Entity {
-        id : sceneEntity
-
-        property PointLight light: PointLight {
-            id: ambientLight
-            color : "white"
-            intensity : 2.0
-
-            QQ2.SequentialAnimation {
-                loops: QQ2.Animation.Infinite
-                running: true
-                //QQ2.ColorAnimation on color { from: "white"; to: "blue"; duration: 4000; loops: 2 }
-
-                //QQ2.NumberAnimation { target: ambientLight; property: "intensity"; from: 0; to: 4.0; duration: 3000; easing.type: QQ2.Easing.Linear }
-                //QQ2.NumberAnimation { target: ambientLight; property: "intensity"; from: 4.0; to: 0; duration: 3000; easing.type: QQ2.Easing.Linear }
+            Button {
+                text: qsTr("Add cube")
+                onClicked: {
+                    defScene.addCubeMesh();
+                }
+            }
+            Button {
+                text: qsTr("Add spotlight")
             }
         }
 
-        components: [ sceneEntity.light ]
+        Rectangle {
+            id: spotLightControls
+            x: 20
+            y: 60
+            width: parent.width
 
-        Camera {
-            id: camera
-            projectionType: CameraLens.PerspectiveProjection
-            fieldOfView: 45
-            aspectRatio: 4/3
-            nearPlane : 0.01
-            farPlane : 1000.0
-            position: Qt.vector3d( 0.0, 0.0, -25.0 )
-            upVector: Qt.vector3d( 0.0, 1.0, 0.0 )
-            viewCenter: Qt.vector3d( 0.0, 0.0, 10.0 )
-        }
-
-        Layer {
-            id : sceneLayer
-            names : "scene"
-        }
-
-        SphereMesh {
-            id : sphereMesh
-            rings: 50
-            slices: 100
-            shareable: true
-        }
-
-        SceneEffect {
-            id : sceneMaterialEffect
-        }
-
-        Entity {
-            id: light3
-            property PointLight light : PointLight {
-                color : "red"
-                intensity : 5.0
+            Text {
+                text: qsTr("Spotlight controls");
             }
+            GridLayout {
+                y: 30
+                columns: 2
+                columnSpacing: 10
+                width: parent.width - 40
 
-            property Material material : Material {
-                effect : sceneMaterialEffect
-                parameters : Parameter { name : "meshColor"; value : "red" }
-            }
+                Text { text: "Red" }
+                Slider {
+                    id: redSlider
+                    minimumValue: 0
+                    maximumValue: 1
+                    stepSize: 0.01
+                    Layout.fillWidth: true
+                    onValueChanged: {
+                        defScene.setSpotLightColor(Qt.rgba(redSlider.value, greenSlider.value, blueSlider.value, 1.0))
+                    }
+                }
 
-            property Transform transform : Transform {
-                Translate {
-                    id: light3Translate; dx: 4; dy: -3.5; dz : 0
-                    QQ2.SequentialAnimation {
-                        loops: QQ2.Animation.Infinite
-                        running: true
-                        QQ2.NumberAnimation {target: light3Translate; property: "dy"; to: 6; duration: 3000; easing.type: QQ2.Easing.Linear }
-                        QQ2.NumberAnimation {target: light3Translate; property: "dy"; to: -6; duration: 3000; easing.type: QQ2.Easing.Linear }
+                Text { text: "Green" }
+                Slider {
+                    id: greenSlider
+                    minimumValue: 0
+                    maximumValue: 1
+                    stepSize: 0.01
+                    value: 1.0
+                    Layout.fillWidth: true
+                    onValueChanged: {
+                        defScene.setSpotLightColor(Qt.rgba(redSlider.value, greenSlider.value, blueSlider.value, 1.0))
+                    }
+                }
+
+                Text { text: "Blue" }
+                Slider {
+                    id: blueSlider
+                    minimumValue: 0
+                    maximumValue: 1
+                    stepSize: 0.01
+                    Layout.fillWidth: true
+                    onValueChanged: {
+                        defScene.setSpotLightColor(Qt.rgba(redSlider.value, greenSlider.value, blueSlider.value, 1.0))
+                    }
+                }
+
+                Text { text: "X Rotation" }
+                Slider {
+                    id: xRotSlider
+                    minimumValue: 0
+                    maximumValue: 360
+                    stepSize: 1.0
+                    Layout.fillWidth: true
+                    onValueChanged: {
+                        defScene.setSpotLightRotation(value)
                     }
                 }
             }
-
-            components: [
-                sphereMesh,
-                material,
-                light,
-                transform,
-                sceneLayer
-            ]
         }
 
-        SpotLightMesh {
-            id: cone
-            sceneEffect: sceneMaterialEffect
-            pos3D: Qt.vector3d(-1, 1, 1)
-        }
-
-        Entity {
-            id: monkey
-            Mesh {
-                id: monkeyMesh
-                source: "qrc:/assets/suzanne.obj"
-            }
-            Transform {
-                id: monkeyTransform
-                Rotate {
-                    angle: 180
-                    axis: Qt.vector3d(0, 1, 0)
-                }
-
-                Translate {
-                    dy: -2
-                    dz: 1
-                }
-            }
-            property Material material : Material {
-                effect : sceneMaterialEffect
-                parameters : Parameter { name : "meshColor"; value : "gray" }
-            }
-
-            components : [
-                monkeyMesh,
-                monkeyTransform,
-                material,
-                sceneLayer
-            ]
-        }
-
-        Entity {
-            id: plane
-            property Material material : Material {
-                effect : sceneMaterialEffect
-                parameters : Parameter { name : "meshColor"; value : "gray" }
-            }
-
-            PlaneMesh {
-                id: groundMesh
-                width: 50
-                height: width
-                meshResolution: Qt.size(2, 2)
-            }
-
-            Transform {
-                id: groundTransform
-                Translate {
-                    dy: -5
-                }
-            }
-
-            components: [
-                groundMesh,
-                groundTransform,
-                material,
-                sceneLayer
-            ]
-        }
     }
+
 }
