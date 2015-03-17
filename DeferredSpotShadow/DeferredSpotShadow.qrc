@@ -8,6 +8,7 @@
         <file>SpotLightShadowRenderTarget.qml</file>
         <file>DeferredRenderer.qml</file>
         <file>FinalEffect.qml</file>
+        <file>ShadowMapEffect.qml</file>
         <file>SceneEffect.qml</file>
         <file>GBuffer.qml</file>
 
@@ -15,6 +16,11 @@
 
         <file>assets/suzanne.obj</file>
         <file>assets/cone.obj</file>
+
+        <file>shaders/geometry.vert</file>
+        <file>shaders/geometry.frag</file>
+        <file>shaders/geometry_gl2.vert</file>
+        <file>shaders/geometry_gl2.frag</file>
 
         <file>shaders/deferred.vert</file>
         <file>shaders/deferred.frag</file>

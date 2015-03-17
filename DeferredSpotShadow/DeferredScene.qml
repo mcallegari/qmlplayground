@@ -146,6 +146,10 @@ Entity {
             id : sceneMaterialEffect
         }
 
+        ShadowMapEffect {
+            id: shadowMapEffect
+        }
+
         Entity {
             id: light3
             property PointLight light : PointLight {

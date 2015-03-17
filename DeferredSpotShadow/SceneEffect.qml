@@ -38,103 +38,41 @@ import Qt3D 2.0
 import Qt3D.Render 2.0
 
 Effect {
-    id : sceneMaterialEffect
+    id : smEffect
     techniques : [
         // OpenGL 3.1
         Technique {
-            openGLFilter {api : OpenGLFilter.Desktop; profile : OpenGLFilter.Core; minorVersion : 1; majorVersion : 3 }
+            openGLFilter {
+                api : OpenGLFilter.Desktop
+                profile : OpenGLFilter.Core
+                majorVersion : 3
+                minorVersion : 1
+            }
+
             renderPasses : RenderPass {
                 annotations : Annotation { name : "pass"; value : "geometry" }
                 shaderProgram : ShaderProgram {
                     id : sceneShaderGL3
-                    vertexShaderCode:
-                        "#version 140
-
-                        in vec4 vertexPosition;
-                        in vec3 vertexNormal;
-
-                        out vec4 color0;
-                        out vec3 position0;
-                        out vec3 normal0;
-
-                        uniform mat4 mvp;
-                        uniform mat4 modelView;
-                        uniform mat3 modelViewNormal;
-                        uniform vec4 meshColor;
-
-                        void main()
-                        {
-                            color0 = meshColor;
-                            position0 = vec3(modelView * vertexPosition);
-                            normal0 = normalize(modelViewNormal * vertexNormal);
-                            gl_Position = mvp * vertexPosition;
-                        }
-                    "
-                    fragmentShaderCode:
-                        "#version 140
-
-                        in vec4 color0;
-                        in vec3 position0;
-                        in vec3 normal0;
-
-                        out vec4 color;
-                        out vec3 position;
-                        out vec3 normal;
-
-                        void main()
-                        {
-                            color = color0;
-                            position = position0;
-                            normal = normal0;
-                        }
-                    "
+                    vertexShaderCode: loadSource("qrc:/shaders/geometry.vert")
+                    fragmentShaderCode: loadSource("qrc:/shaders/geometry.frag")
                 }
             }
         },
         // OpenGL 2.0
         Technique {
-            openGLFilter {api : OpenGLFilter.Desktop; profile : OpenGLFilter.Core; minorVersion : 0; majorVersion : 2 }
+            openGLFilter {
+                api : OpenGLFilter.Desktop
+                profile : OpenGLFilter.Core
+                majorVersion : 2
+                minorVersion : 0
+            }
+
             renderPasses : RenderPass {
                 annotations : Annotation { name : "pass"; value : "geometry" }
                 shaderProgram : ShaderProgram {
                     id : sceneShaderGL2
-                    vertexShaderCode:
-                        "#version 110
-
-                        attribute vec4 vertexPosition;
-                        attribute vec3 vertexNormal;
-
-                        varying vec4 color0;
-                        varying vec3 position0;
-                        varying vec3 normal0;
-
-                        uniform mat4 mvp;
-                        uniform mat4 modelView;
-                        uniform mat3 modelViewNormal;
-                        uniform vec4 meshColor;
-
-                        void main()
-                        {
-                            color0 = meshColor;
-                            position0 = vec3(modelView * vertexPosition);
-                            normal0 = normalize(modelViewNormal * vertexNormal);
-                            gl_Position = mvp * vertexPosition;
-                        }
-                    "
-                    fragmentShaderCode:
-                        "#version 110
-
-                        varying vec4 color0;
-                        varying vec3 position0;
-                        varying vec3 normal0;
-
-                        void main()
-                        {
-                            gl_FragData[0] = color0;
-                            gl_FragData[1] = vec4(position0, 0);
-                            gl_FragData[2] = vec4(normal0, 0);
-                        }
-                    "
+                    vertexShaderCode: loadSource("qrc:/shaders/geometry_gl2.vert")
+                    fragmentShaderCode: loadSource("qrc:/shaders/geometry_gl2.frag")
                 }
             }
         }
