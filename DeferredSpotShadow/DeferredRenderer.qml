@@ -42,6 +42,7 @@ FrameGraph {
 
     property alias gBuffer : gBufferTargetSelector.target
     property alias camera : sceneCameraSelector.camera
+    property alias shadowsLayer: shadowMapsLayer
 
     activeFrameGraph: Viewport {
         rect : Qt.rect(0.0, 0.0, 1.0, 1.0)
@@ -65,6 +66,13 @@ FrameGraph {
                     }
                 }
             }
+        }
+
+        LayerFilter {
+            id: shadowMapsLayer
+            layers : "shadows"
+
+            // this will be filled dynamically with RenderTargetSelector at runtime
         }
 
         LayerFilter {

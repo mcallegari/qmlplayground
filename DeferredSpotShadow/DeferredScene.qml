@@ -51,6 +51,10 @@ Entity {
         Creator.createCubeMesh()
     }
 
+    function addSpotLight() {
+        Creator.createSpotLight()
+    }
+
     function setSpotLightColor(color) {
         coneLight.lightColor = color
     }
@@ -97,7 +101,7 @@ Entity {
                     Parameter { name: "normal"; value : gBuffer.normal },
                     Parameter { name: "winSize"; value : Qt.size(1024, 1024) }
                 ]
-                effect : FinalEffect {}
+                effect : FinalEffect { id: sceneFinalEffect }
             }
         ]
 

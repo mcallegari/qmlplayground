@@ -5,6 +5,7 @@
         <file>GenericMesh.qml</file>
         <file>CubeMesh.qml</file>
         <file>StaticSpotLight.qml</file>
+        <file>SpotLightShadowRenderTarget.qml</file>
         <file>DeferredRenderer.qml</file>
         <file>FinalEffect.qml</file>
         <file>SceneEffect.qml</file>

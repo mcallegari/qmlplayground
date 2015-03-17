@@ -38,6 +38,8 @@ import Qt3D 2.0
 import Qt3D.Render 2.0
 
 Effect {
+    property alias spotLightsSD: spotLightsShaderData.values
+
     techniques : [
         // OpenGL 3.1
         Technique {
@@ -57,6 +59,7 @@ Effect {
                     name: "SpotLightBlock"
                     value: ShaderData {
                         property ShaderDataArray spotLights: ShaderDataArray {
+                            id: spotLightsShaderData
                             // hard coded lights until we have a way to filter
                             // ShaderData in a scene
                             values: [ coneLight.light ]

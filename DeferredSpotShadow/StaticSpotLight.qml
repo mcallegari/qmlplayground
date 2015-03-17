@@ -55,30 +55,6 @@ Entity {
         upVector: Qt.vector3d(0.0, 1.0, 0.0)
     }
 
-    property RenderTarget depthBuffer : RenderTarget {
-        attachments: [
-            RenderAttachment {
-                name: "depth"
-                type: RenderAttachment.DepthAttachment
-                texture: Texture2D {
-                    id: depthTexture
-                    width: 1024
-                    height: 1024
-                    format: Texture.DepthFormat
-                    generateMipMaps: false
-                    magnificationFilter: Texture.Linear
-                    minificationFilter: Texture.Linear
-                    wrapMode {
-                        x: WrapMode.ClampToEdge
-                        y: WrapMode.ClampToEdge
-                    }
-                    comparisonFunction: Texture.CompareLessEqual
-                    comparisonMode: Texture.CompareRefToTexture
-                }
-            }
-        ]
-    }
-
     components : [
         lightMesh,
         lightTransform,

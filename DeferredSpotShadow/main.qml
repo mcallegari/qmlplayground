@@ -85,6 +85,10 @@ Item {
             }
             Button {
                 text: qsTr("Add spotlight")
+                onClicked: {
+                    defScene.addSpotLight();
+                }
+
             }
         }
 
