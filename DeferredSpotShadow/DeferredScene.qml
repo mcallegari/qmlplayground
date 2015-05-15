@@ -165,13 +165,14 @@ Entity {
             property Transform transform : Transform {
                 Translate {
                     id: light3Translate; dx: 4; dy: -3.5; dz : 0
-                    QQ2.SequentialAnimation {
-                        loops: QQ2.Animation.Infinite
-                        running: true
-                        QQ2.NumberAnimation {target: light3Translate; property: "dy"; to: 6; duration: 3000; easing.type: QQ2.Easing.Linear }
-                        QQ2.NumberAnimation {target: light3Translate; property: "dy"; to: -6; duration: 3000; easing.type: QQ2.Easing.Linear }
-                    }
                 }
+            }
+
+            QQ2.SequentialAnimation {
+                loops: QQ2.Animation.Infinite
+                running: true
+                QQ2.NumberAnimation {target: light3Translate; property: "dy"; to: 6; duration: 3000; easing.type: QQ2.Easing.Linear }
+                QQ2.NumberAnimation {target: light3Translate; property: "dy"; to: -6; duration: 3000; easing.type: QQ2.Easing.Linear }
             }
 
             components: [
