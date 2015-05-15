@@ -43,7 +43,12 @@ Effect {
     techniques : [
         // OpenGL 3.1
         Technique {
-            openGLFilter {api : OpenGLFilter.Desktop; profile : OpenGLFilter.Core; minorVersion : 1; majorVersion : 3 }
+            openGLFilter {
+                api : OpenGLFilter.Desktop
+                profile : OpenGLFilter.Core
+                majorVersion : 3
+                minorVersion : 1
+            }
             parameters: [
                 Parameter {
                     name: "PointLightBlock"
@@ -79,15 +84,34 @@ Effect {
         },
         // OpenGL 2.0 with FBO extension
         Technique {
-            openGLFilter {api : OpenGLFilter.Desktop; profile : OpenGLFilter.None; minorVersion : 0; majorVersion : 2 }
-            parameters: Parameter { name: "pointLights"; value: ShaderData {
-                                property ShaderDataArray lights: ShaderDataArray {
-                                    // hard coded lights until we have a way to filter
-                                    // ShaderData in a scene
-                                    values: [sceneEntity.light, light3.light]
-                                }
-                            }
+            openGLFilter {
+                api : OpenGLFilter.Desktop
+                profile : OpenGLFilter.None
+                majorVersion : 2
+                minorVersion : 0
+            }
+            parameters: [
+                Parameter {
+                    name: "PointLightBlock"
+                    value: ShaderData {
+                        property ShaderDataArray lights: ShaderDataArray {
+                            // hard coded lights until we have a way to filter
+                            // ShaderData in a scene
+                            values: [sceneEntity.light, light3.light]
                         }
+                    }
+                },
+                Parameter {
+                    name: "SpotLightBlock"
+                    value: ShaderData {
+                        property ShaderDataArray spotLights: ShaderDataArray {
+                            // hard coded lights until we have a way to filter
+                            // ShaderData in a scene
+                            values: [ coneLight.light ]
+                        }
+                    }
+                }
+            ]
             renderPasses : RenderPass {
                 annotations : Annotation { name : "pass"; value : "final" }
                 shaderProgram : ShaderProgram {
