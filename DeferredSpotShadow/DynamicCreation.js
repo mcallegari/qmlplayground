@@ -60,12 +60,16 @@ function checkComponent() {
 }
 
 function finishCreation() {
-    if (component.status === QQ2InJS.Component.Ready) {
+    if (component.status === QQ2InJS.Component.Ready)
+    {
         meshObj = component.createObject(sceneEntity, { "sourceMesh": meshURL, "position": Qt.vector3d(5, -2, 0 ), "sceneEffect": sceneMaterialEffect });
-        if (meshObj ===  null) {
+        if (meshObj ===  null)
+        {
             // Error Handling
             console.log("Error creating mesh object");
         }
+        else
+            meshObj.parent = sceneEntity
     } else if (component.status === QQ2InJS.Component.Error) {
         // Error Handling
         console.log("Error loading component:", component.errorString());

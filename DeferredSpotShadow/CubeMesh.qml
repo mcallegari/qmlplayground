@@ -1,5 +1,5 @@
 import Qt3D 2.0
-import Qt3D.Render 2.0
+import Qt3D.Renderer 2.0
 import QtQuick 2.1 as QQ2
 
 Entity {
@@ -19,8 +19,8 @@ Entity {
         xyMeshResolution: Qt.size(2, 2)
     }
 
-    Transform {
-        id: refTransform
+    property Transform transform : Transform {
+        id: cubeTransform
         Rotate {
             angle: rotationAngle
             axis: rotationAxis
@@ -32,14 +32,15 @@ Entity {
             dz: position.z
         }
     }
+
     property Material material : Material {
         effect : sceneEffect
-        parameters : Parameter { name : "meshColor"; value : "gray" }
+        parameters : Parameter { name : "meshColor"; value : "blue" }
     }
 
     components : [
         cuboidMesh,
-        refTransform,
+        cubeTransform,
         material,
         sceneLayer
     ]

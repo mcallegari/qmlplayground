@@ -34,7 +34,7 @@
 ** $QT_END_LICENSE$
 **
 ****************************************************************************/
-
+#if 1
 #include <QGuiApplication>
 #include <QQuickView>
 
@@ -51,9 +51,10 @@ int main(int argc, char **argv)
 
     return app.exec();
 }
+#endif
 
-/*
-#include <Qt3DCore/window.h>
+#if 0
+#include <window.h>
 #include <Qt3DRenderer/qrenderaspect.h>
 #include <Qt3DInput/QInputAspect>
 #include <Qt3DQuick/QQmlAspectEngine>
@@ -65,7 +66,7 @@ int main(int argc, char* argv[])
 {
     QGuiApplication app(argc, argv);
 
-    Qt3D::Window view;
+    Window view;
     Qt3D::Quick::QQmlAspectEngine engine;
 
     engine.aspectEngine()->registerAspect(new Qt3D::QRenderAspect());
@@ -75,9 +76,9 @@ int main(int argc, char* argv[])
     data.insert(QStringLiteral("surface"), QVariant::fromValue(static_cast<QSurface *>(&view)));
     data.insert(QStringLiteral("eventSource"), QVariant::fromValue(&view));
     engine.aspectEngine()->setData(data);
-    engine.setSource(QUrl("qrc:/DeferredScene.qml"));
+    engine.setSource(QUrl("qrc:/main.qml"));
     view.show();
 
     return app.exec();
 }
-*/
+#endif
