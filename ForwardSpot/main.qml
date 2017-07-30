@@ -150,7 +150,7 @@ Rectangle
                 Transform
                 {
                     id: groundTransform
-                    translation: Qt.vector3d(0, -1, 0)
+                    translation: Qt.vector3d(0, -2, 0)
                 }
 
                 PhongMaterial

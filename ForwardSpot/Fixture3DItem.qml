@@ -75,40 +75,8 @@ Entity
         {
             console.log("Binding tilt ----")
             fixtureEntity.tiltMaxDegrees = maxDegrees
-            //tiltRotation = maxDegrees / 2
-            //t.rotationX = Qt.binding(function() { return tiltRotation })
-
-            var origMatrix = t.matrix;
-            var origTranslation = t.translation;
-            var origRotation = t.rotation;
-            var origScale = t.scale;
-            console.log("origMatrix      = " + origMatrix);
-            console.log("origTranslation = " + origTranslation);
-            console.log("origRotation    = " + origRotation);
-            console.log("origScale       = " + origScale);
-
-            // Make a deep copy of the original translation. This will not be updated when the
-            // transformation's translation property gets updated due to the animation.
-            var constantTranslation = Qt.vector3d(origTranslation.x, origTranslation.y, origTranslation.z);
-
-            t.matrix = Qt.binding(function() {
-                var m = Qt.matrix4x4();
-
-                m.translate(constantTranslation);
-                m.rotate(tiltRotation, Qt.vector3d(1, 0, 0));
-                m.scale(origScale);
-                //m.rotate(90, Qt.vector3d(1, 0, 0));
-
-                /*
-                var m = t.rotateAround(Qt.vector3d(0, 0, 0), tiltRotation, Qt.vector3d(1, 0, 0))
-                m.translate(constantTranslation);
-                m.scale(origScale);
-                */
-                console.log("Modified matrix = " + m)
-
-                return m;
-
-            })
+            tiltRotation = maxDegrees / 2
+            t.rotationX = Qt.binding(function() { return tiltRotation })
         }
 
         onStatusChanged:
