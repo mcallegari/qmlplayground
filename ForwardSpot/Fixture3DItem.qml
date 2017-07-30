@@ -82,7 +82,7 @@ Entity
         onStatusChanged:
         {
             if (status == SceneLoader.Ready)
-                View3D.initializeFixture(fixtureID, eObjectPicker, eSceneLoader)
+                View3D.initializeFixture(fixtureID, eObjectPicker, eSceneLoader, eSpotLight)
         }
 
         NumberAnimation on panRotation
@@ -107,6 +107,16 @@ Entity
     }
 
     components: [ eTransform, eSceneLoader ]
+
+    SpotLight
+    {
+        id: eSpotLight
+        localDirection: Qt.vector3d(0.0, 0.0, -1.0)
+        color: "blue"
+        cutOffAngle: 15
+        constantAttenuation: 1
+        intensity: 0.8
+    }
 
     /* This gets re-parented and activated on initializeFixture */
     ObjectPicker

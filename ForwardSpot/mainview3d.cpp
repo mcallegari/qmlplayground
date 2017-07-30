@@ -24,7 +24,7 @@ Qt3DCore::QTransform *MainView3D::getTransform(QEntity *entity)
     return NULL;
 }
 
-void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, Qt3DRender::QSceneLoader *loader)
+void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, Qt3DRender::QSceneLoader *loader, QSpotLight *light)
 {
     FixtureMesh *meshRef = new FixtureMesh;
     meshRef->m_rootItem = NULL;
@@ -76,6 +76,8 @@ void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, Qt3DRender:
                 QMetaObject::invokeMethod(loader, "bindTiltTransform",
                         Q_ARG(QVariant, QVariant::fromValue(transform)),
                         Q_ARG(QVariant, 270));
+
+            meshRef->m_headItem->addComponent(light);
         }
         else
         {

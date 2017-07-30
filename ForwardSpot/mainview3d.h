@@ -1,10 +1,12 @@
 #include <Qt3DCore/QEntity>
 #include <Qt3DCore/QTransform>
 #include <Qt3DRender/QSceneLoader>
+#include <Qt3DRender/QSpotLight>
 
 #include <QQuickView>
 
 using namespace Qt3DCore;
+using namespace Qt3DRender;
 
 typedef struct
 {
@@ -27,7 +29,7 @@ public:
     MainView3D(QQuickView *view, QObject *parent = 0);
     ~MainView3D() { }
 
-    Q_INVOKABLE void initializeFixture(quint32 fxID, QComponent *picker, Qt3DRender::QSceneLoader *loader);
+    Q_INVOKABLE void initializeFixture(quint32 fxID, QComponent *picker, QSceneLoader *loader, QSpotLight *light);
 
 private:
     Qt3DCore::QTransform *getTransform(QEntity *entity);
