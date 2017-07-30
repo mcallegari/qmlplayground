@@ -101,7 +101,7 @@ Entity
 
         PointLight {
             id: light2
-            color : "orange"
+            color : "green"
             intensity : 0.7
         }
 

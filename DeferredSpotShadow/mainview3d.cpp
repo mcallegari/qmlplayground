@@ -25,7 +25,7 @@ Qt3DCore::QTransform *MainView3D::getTransform(QEntity *entity)
     return NULL;
 }
 
-Qt3DRender::QMaterial *MainView3D::getMaterial(QEntity *entity)
+QMaterial *MainView3D::getMaterial(QEntity *entity)
 {
     if (entity == NULL)
         return NULL;
@@ -33,7 +33,7 @@ Qt3DRender::QMaterial *MainView3D::getMaterial(QEntity *entity)
     for (QComponent *component : entity->components()) // C++11
     {
         //qDebug() << component->metaObject()->className();
-        Qt3DRender::QMaterial *material = qobject_cast<Qt3DRender::QMaterial *>(component);
+        QMaterial *material = qobject_cast<QMaterial *>(component);
         if (material)
             return material;
     }
@@ -41,8 +41,8 @@ Qt3DRender::QMaterial *MainView3D::getMaterial(QEntity *entity)
     return NULL;
 }
 
-void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, Qt3DRender::QSceneLoader *loader,
-                                   Qt3DRender::QLayer *layer, Qt3DRender::QEffect *effect)
+void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, QSceneLoader *loader,
+                                   QSpotLight *light, QLayer *layer, QEffect *effect)
 {
     // The QSceneLoader instance is a component of an entity. The loaded scene
     // tree is added under this entity.
@@ -66,7 +66,7 @@ void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, Qt3DRender:
     if (baseItem != NULL)
     {
         meshRef->m_rootTransform = getTransform(baseItem);
-        Qt3DRender::QMaterial *material = getMaterial(baseItem);
+        QMaterial *material = getMaterial(baseItem);
         if (material != NULL)
             material->setEffect(effect);
     }
@@ -78,7 +78,7 @@ void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, Qt3DRender:
             QMetaObject::invokeMethod(loader, "bindPanTransform",
                     Q_ARG(QVariant, QVariant::fromValue(transform)),
                     Q_ARG(QVariant, 360));
-        Qt3DRender::QMaterial *material = getMaterial(meshRef->m_armItem);
+        QMaterial *material = getMaterial(meshRef->m_armItem);
         if (material != NULL)
             material->setEffect(effect);
         meshRef->m_armItem->addComponent(layer);
@@ -97,10 +97,13 @@ void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, Qt3DRender:
                 QMetaObject::invokeMethod(loader, "bindTiltTransform",
                         Q_ARG(QVariant, QVariant::fromValue(transform)),
                         Q_ARG(QVariant, 270));
-            Qt3DRender::QMaterial *material = getMaterial(meshRef->m_headItem);
+            QMaterial *material = getMaterial(meshRef->m_headItem);
             if (material != NULL)
                 material->setEffect(effect);
             meshRef->m_headItem->addComponent(layer);
+
+            light->setParent(meshRef->m_headItem);
+            meshRef->m_headItem->addComponent(light);
         }
         else
         {

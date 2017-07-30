@@ -31,44 +31,85 @@ void main()
 {
     vec2 texCoord = gl_FragCoord.xy / winSize;
     vec4 col = texture(color, texCoord);
-    vec3 pos = texture(position, texCoord).xyz;
+    vec3 pos = texture(position, texCoord).xyz;  
+/*
     vec3 norm = texture(normal, texCoord).xyz;
-
     vec3 lightColor = vec3(0.0);
     vec3 s = vec3(0.0);
-    vec3 n = normalize(norm);
 
     for (int i = 0; i < lightCount; ++i) {
         float att = 1.0;
+        if ( lights[i].type != TYPE_DIRECTIONAL ) {
+            s = lights[i].position - pos;
+            if (lights[i].constantAttenuation != 0.0
+                || lights[i].linearAttenuation != 0.0
+                || lights[i].quadraticAttenuation != 0.0) {
+                float dist = length(s);
+                att = 1.0 / (lights[i].constantAttenuation + lights[i].linearAttenuation * dist + lights[i].quadraticAttenuation * dist * dist);
+            }
+            s = normalize( s );
+            if ( lights[i].type == TYPE_SPOT ) {
+                if ( degrees(acos(dot(-s, normalize(-lights[i].direction))) ) > lights[i].cutOffAngle)
+                    att = 0.0;
+            }
+        } else {
+            s = normalize( -lights[i].direction );
+        }
+
+        float diffuse = max( dot( s, norm ), 0.0 );
+
+        lightColor += att * lights[i].intensity * diffuse * lights[i].color;
+    }
+*/
+    vec3 n = normalize(vec3(texture(normal, texCoord)));
+    vec3 lightColor = vec3(0.0);
+    vec3 s = vec3(0.0);
+
+    for (int i = 0; i < lightCount; ++i)
+    {
+        float att = 1.0;
         float sDotN = 0.0;
         
-        if (lights[i].type != TYPE_DIRECTIONAL) {
+        if (lights[i].type != TYPE_DIRECTIONAL)
+        {
             // Light position is already in world space
             vec3 sUnnormalized = lights[i].position - pos;
             s = normalize(sUnnormalized); // Light direction
 
             // Calculate the attenuation factor
             sDotN = dot(s, n);
-            
-            if (sDotN > 0.0) {
+
+            if (sDotN > 0.0)
+            {
                 if (lights[i].constantAttenuation != 0.0
-                 || lights[i].linearAttenuation != 0.0
-                 || lights[i].quadraticAttenuation != 0.0) {
+                    || lights[i].linearAttenuation != 0.0
+                    || lights[i].quadraticAttenuation != 0.0)
+                {
                     float dist = length(sUnnormalized);
                     att = 1.0 / (lights[i].constantAttenuation +
                                  lights[i].linearAttenuation * dist +
                                  lights[i].quadraticAttenuation * dist * dist);
                 }
 
-                // The light direction is in world space already
-                if (lights[i].type == TYPE_SPOT) {
+                if (lights[i].type == TYPE_SPOT)
+                {
                     // Check if fragment is inside or outside of the spot light cone
-                    if (degrees(acos(dot(-s, lights[i].direction))) > lights[i].cutOffAngle)
+/*
+                    vec3 spotDir = normalize(-lights[i].direction);
+                    float angle = acos(dot(-s, spotDir));
+                    float cutoff = radians(clamp(lights[i].cutOffAngle, 0.0, 90.0));
+
+                    if(angle > cutoff)
+                        sDotN = 0.0;
+*/
+                    if (degrees(acos(dot(-s, normalize(-lights[i].direction)))) > lights[i].cutOffAngle)
                         sDotN = 0.0;
                 }
             }
-        } else {
-            s = normalize( -lights[i].direction );
+        }
+        else
+        {
+            s = normalize(-lights[i].direction);
         }
 
         // Calculate the diffuse factor
@@ -76,5 +117,6 @@ void main()
 
         lightColor += att * lights[i].intensity * diffuse * lights[i].color;
     }
+
     fragColor = vec4(col.rgb * lightColor, col.a);
 }

@@ -82,7 +82,8 @@ Rectangle
 
             components: [ renderSettings, inputSettings ]
 
-            FirstPersonCameraController { camera: sceneEntity.camera }
+            //FirstPersonCameraController { camera: sceneEntity.camera }
+            OrbitCameraController { camera: sceneEntity.camera }
             ScreenQuadEntity { id: screenQuadEntity }
             SceneEntity { id: sceneEntity }
             //GBufferDebugger { id: debugEntity }
@@ -112,6 +113,7 @@ Rectangle
                 id: panSlider
                 from: 0
                 to: 360
+                wheelEnabled: true
                 onValueChanged: View3D.setPanTilt(0, value, tiltSlider.value)
             }
 
@@ -125,6 +127,7 @@ Rectangle
                 id: tiltSlider
                 from: 0
                 to: 270
+                wheelEnabled: true
                 onValueChanged:  View3D.setPanTilt(0, panSlider.value, value)
             }
 

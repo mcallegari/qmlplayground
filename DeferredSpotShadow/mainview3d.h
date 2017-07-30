@@ -4,10 +4,12 @@
 #include <Qt3DRender/QLayer>
 #include <Qt3DRender/QEffect>
 #include <Qt3DRender/QMaterial>
+#include <Qt3DRender/QSpotLight>
 
 #include <QQuickView>
 
 using namespace Qt3DCore;
+using namespace Qt3DRender;
 
 typedef struct
 {
@@ -30,16 +32,16 @@ public:
     MainView3D(QQuickView *view, QObject *parent = 0);
     ~MainView3D() { }
 
-    Q_INVOKABLE void initializeFixture(quint32 fxID, QComponent *picker, Qt3DRender::QSceneLoader *loader,
-                                       Qt3DRender::QLayer *layer, Qt3DRender::QEffect *effect);
+    Q_INVOKABLE void initializeFixture(quint32 fxID, QComponent *picker, QSceneLoader *loader,
+                                       QSpotLight *light, QLayer *layer, QEffect *effect);
 
-    Q_INVOKABLE void createMesh(QEntity *root, Qt3DRender::QLayer *layer, Qt3DRender::QEffect *effect);
+    Q_INVOKABLE void createMesh(QEntity *root, QLayer *layer, QEffect *effect);
 
     Q_INVOKABLE void setPanTilt(quint32 fxID, int panDegrees, int tiltDegrees);
 
 private:
     Qt3DCore::QTransform *getTransform(QEntity *entity);
-    Qt3DRender::QMaterial *getMaterial(QEntity *entity);
+    QMaterial *getMaterial(QEntity *entity);
 
 private:
     /** Reference to the current view window.
