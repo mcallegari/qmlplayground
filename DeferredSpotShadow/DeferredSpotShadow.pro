@@ -1,20 +1,12 @@
-TEMPLATE = app
 
-QT +=  3dcore 3drenderer 3dinput 3dquick qml quick
+SOURCE += main.cpp
 
-HEADERS += \
+QT += qml quick 3dcore 3drender 3dinput 3dquick 3dextras 3dquickextras
 
+OTHER_FILES += main.qml
 
-OTHER_FILES += \
-    main.qml \
-    DeferredRenderer.qml \
-    FinalEffect.qml \
-    SceneEffect.qml \
-    SpotLightMesh.qml \
-    GBuffer.qml
+HEADERS += mainview3d.h
 
-RESOURCES += \
-    DeferredSpotShadow.qrc
+SOURCES += main.cpp mainview3d.cpp
 
-SOURCES += \
-    main.cpp
+RESOURCES += DeferredSpotShadow.qrc

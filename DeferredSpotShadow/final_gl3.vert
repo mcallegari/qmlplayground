@@ -7,4 +7,3 @@ void main()
 {
     gl_Position = modelMatrix * vertexPosition;
 }
-

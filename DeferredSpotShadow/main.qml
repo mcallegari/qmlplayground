@@ -1,163 +1,138 @@
-/****************************************************************************
-**
-** Copyright (C) 2015 Klaralvdalens Datakonsult AB (KDAB).
-** Contact: http://www.qt-project.org/legal
-**
-** This file is part of the Qt3D module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:LGPL3$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see http://www.qt.io/terms-conditions. For further
-** information use the contact form at http://www.qt.io/contact-us.
-**
-** GNU Lesser General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU Lesser
-** General Public License version 3 as published by the Free Software
-** Foundation and appearing in the file LICENSE.LGPLv3 included in the
-** packaging of this file. Please review the following information to
-** ensure the GNU Lesser General Public License version 3 requirements
-** will be met: https://www.gnu.org/licenses/lgpl.html.
-**
-** GNU General Public License Usage
-** Alternatively, this file may be used under the terms of the GNU
-** General Public License version 2.0 or later as published by the Free
-** Software Foundation and appearing in the file LICENSE.GPL included in
-** the packaging of this file. Please review the following information to
-** ensure the GNU General Public License version 2.0 requirements will be
-** met: http://www.gnu.org/licenses/gpl-2.0.html.
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+/*
+  Q Light Controller Plus
+  3DView.qml
 
-import QtQuick 2.0
-import QtQuick.Controls 1.0
-import QtQuick.Layouts 1.0
+  Copyright (c) Massimo Callegari
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0.txt
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
+
+import QtQuick 2.3
+import QtQuick.Controls 2.0
+
 import QtQuick.Scene3D 2.0
+import Qt3D.Core 2.0
+import Qt3D.Render 2.0
+import Qt3D.Input 2.0
+import Qt3D.Extras 2.0
 
-Item {
-    id: root
+Rectangle
+{
+    anchors.fill: parent
+    color: "black"
 
-    Rectangle {
-        id: sceneBox
-        width: Math.min(parent.width, parent.height)
-        height: width
-
-        Scene3D {
-            anchors.fill: parent
-            focus: true
-            aspects: "input"
-
-            DeferredScene {
-                id: defScene
-            }
-        }
-    }
-
-    Rectangle {
-        id: rightControls
-        x: sceneBox.width
-        width: parent.width - sceneBox.width
+    MouseArea
+    {
+        width: parent.width * 0.75
         height: parent.height
-
-        color: "lightgray"
-
-        Row {
-            x: 20
-            y: 20
-            spacing: 10
-
-            Button {
-                text: qsTr("Add mesh")
-                onClicked: {
-                    defScene.addGenericMesh("qrc:/assets/suzanne.obj");
-                }
-            }
-            Button {
-                text: qsTr("Add cube")
-                onClicked: {
-                    defScene.addCubeMesh();
-                }
-            }
-            Button {
-                text: qsTr("Add spotlight")
-                onClicked: {
-                    defScene.addSpotLight();
-                }
-
-            }
+        onClicked: scene3d.forceActiveFocus()
+        preventStealing: true
+        onWheel:
+        {
+            if (wheel.angleDelta.y > 0)
+                sceneEntity.camera.position.z += 0.3
+            else
+                sceneEntity.camera.position.z -= 0.3
         }
-
-        Rectangle {
-            id: spotLightControls
-            x: 20
-            y: 60
-            width: parent.width
-
-            Text {
-                text: qsTr("Spotlight controls");
-            }
-            GridLayout {
-                y: 30
-                columns: 2
-                columnSpacing: 10
-                width: parent.width - 40
-
-                Text { text: "Red" }
-                Slider {
-                    id: redSlider
-                    minimumValue: 0
-                    maximumValue: 1
-                    stepSize: 0.01
-                    Layout.fillWidth: true
-                    onValueChanged: {
-                        defScene.setSpotLightColor(Qt.rgba(redSlider.value, greenSlider.value, blueSlider.value, 1.0))
-                    }
-                }
-
-                Text { text: "Green" }
-                Slider {
-                    id: greenSlider
-                    minimumValue: 0
-                    maximumValue: 1
-                    stepSize: 0.01
-                    value: 1.0
-                    Layout.fillWidth: true
-                    onValueChanged: {
-                        defScene.setSpotLightColor(Qt.rgba(redSlider.value, greenSlider.value, blueSlider.value, 1.0))
-                    }
-                }
-
-                Text { text: "Blue" }
-                Slider {
-                    id: blueSlider
-                    minimumValue: 0
-                    maximumValue: 1
-                    stepSize: 0.01
-                    Layout.fillWidth: true
-                    onValueChanged: {
-                        defScene.setSpotLightColor(Qt.rgba(redSlider.value, greenSlider.value, blueSlider.value, 1.0))
-                    }
-                }
-
-                Text { text: "X Rotation" }
-                Slider {
-                    id: xRotSlider
-                    minimumValue: 0
-                    maximumValue: 360
-                    stepSize: 1.0
-                    Layout.fillWidth: true
-                    onValueChanged: {
-                        defScene.setSpotLightRotation(value)
-                    }
-                }
-            }
-        }
-
     }
 
+    Scene3D
+    {
+        id: scene3d
+        objectName: "scene3DItem"
+        z: 1
+        width: parent.width * 0.75
+        height: parent.height
+        aspects: ["input", "logic"]
+        cameraAspectRatioMode: Scene3D.AutomaticAspectRatio
+
+        Entity
+        {
+            id: sceneRoot
+            objectName: "sceneRootEntity"
+
+            RenderSettings
+            {
+                id : renderSettings
+                activeFrameGraph:
+                    DeferredRenderer
+                    {
+                        id: frameGraph
+                        camera : sceneEntity.camera
+                        gBuffer: GBuffer {}
+                        sceneLayer: sceneEntity.layer
+                        screenQuadLayer: screenQuadEntity.layer
+                        //debugLayer: debugEntity.layer
+                    }
+                renderPolicy: RenderSettings.Always
+            }
+
+            // Event Source will be set by the Qt3DQuickWindow
+            InputSettings { id: inputSettings  }
+
+            components: [ renderSettings, inputSettings ]
+
+            FirstPersonCameraController { camera: sceneEntity.camera }
+            ScreenQuadEntity { id: screenQuadEntity }
+            SceneEntity { id: sceneEntity }
+            //GBufferDebugger { id: debugEntity }
+        } // sceneRoot
+    } // scene3d
+
+    Rectangle
+    {
+        // scene controls
+        color: "white"
+        width: parent.width * 0.25
+        height: parent.height
+        anchors.right: parent.right
+        z: 2
+
+        Column
+        {
+            anchors.fill: parent
+
+            Text
+            {
+                text: "Pan rotation"
+            }
+
+            Slider
+            {
+                id: panSlider
+                from: 0
+                to: 360
+                onValueChanged: View3D.setPanTilt(0, value, tiltSlider.value)
+            }
+
+            Text
+            {
+                text: "Tilt rotation"
+            }
+
+            Slider
+            {
+                id: tiltSlider
+                from: 0
+                to: 270
+                onValueChanged:  View3D.setPanTilt(0, panSlider.value, value)
+            }
+
+            Button
+            {
+                text: "Add mesh"
+                onClicked: sceneEntity.createMesh()
+            }
+        }
+    }
 }

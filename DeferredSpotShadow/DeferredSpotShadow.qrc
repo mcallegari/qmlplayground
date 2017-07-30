@@ -1,30 +1,22 @@
 <RCC>
     <qresource prefix="/">
         <file>main.qml</file>
-        <file>DeferredScene.qml</file>
-        <file>GenericMesh.qml</file>
-        <file>CubeMesh.qml</file>
-        <file>StaticSpotLight.qml</file>
-        <file>SpotLightShadowRenderTarget.qml</file>
         <file>DeferredRenderer.qml</file>
         <file>FinalEffect.qml</file>
-        <file>ShadowMapEffect.qml</file>
-        <file>SceneEffect.qml</file>
+        <file>Fixture3DItem.qml</file>
         <file>GBuffer.qml</file>
-
-        <file>DynamicCreation.js</file>
-
-        <file>assets/suzanne.obj</file>
-        <file>assets/cone.obj</file>
-
-        <file>shaders/geometry.vert</file>
-        <file>shaders/geometry.frag</file>
-        <file>shaders/geometry_gl2.vert</file>
-        <file>shaders/geometry_gl2.frag</file>
-
-        <file>shaders/deferred.vert</file>
-        <file>shaders/deferred.frag</file>
-        <file>shaders/deferred_gl2.vert</file>
-        <file>shaders/deferred_gl2.frag</file>
+        <file>GBufferDebugger.qml</file>
+        <file>SceneEffect.qml</file>
+        <file>SceneEntity.qml</file>
+        <file>ScreenQuadEntity.qml</file>
+        <file>moving_head.dae</file>
+        <file>debug_gl3.vert</file>
+        <file>debug_gl3.frag</file>
+        <file>debug_es2.frag</file>
+        <file>debug_es2.vert</file>
+        <file>final_es2.vert</file>
+        <file>final_gl3.frag</file>
+        <file>final_gl3.vert</file>
+        <file>final_es2.frag</file>
     </qresource>
 </RCC>
