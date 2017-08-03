@@ -4,6 +4,7 @@
         <file>DeferredRenderer.qml</file>
         <file>FinalEffect.qml</file>
         <file>Fixture3DItem.qml</file>
+        <file>FixtureSpotLight.qml</file>
         <file>GBuffer.qml</file>
         <file>GBufferDebugger.qml</file>
         <file>SceneEffect.qml</file>

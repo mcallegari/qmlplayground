@@ -1,4 +1,5 @@
 #include <QQmlComponent>
+#include <QQmlProperty>
 
 #include "mainview3d.h"
 
@@ -42,7 +43,7 @@ QMaterial *MainView3D::getMaterial(QEntity *entity)
 }
 
 void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, QSceneLoader *loader,
-                                   QSpotLight *light, QLayer *layer, QEffect *effect)
+                                   QLayer *layer, QEffect *effect)
 {
     // The QSceneLoader instance is a component of an entity. The loaded scene
     // tree is added under this entity.
@@ -102,8 +103,23 @@ void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, QSceneLoade
                 material->setEffect(effect);
             meshRef->m_headItem->addComponent(layer);
 
-            light->setParent(meshRef->m_headItem);
-            meshRef->m_headItem->addComponent(light);
+            QQmlComponent *lightComponent = new QQmlComponent(m_view->engine(), QUrl("qrc:/FixtureSpotLight.qml"));
+            if (lightComponent->isError())
+                qDebug() << lightComponent->errors();
+
+            QEntity *newLightItem = qobject_cast<QEntity *>(lightComponent->create());
+
+            if (newLightItem == NULL)
+            {
+                qWarning() << "Error during light component creation";
+                return;
+            }
+
+            newLightItem->setParent(m_quadEntity);
+            newLightItem->setProperty("transform", QVariant::fromValue(transform));
+
+            QLayer *quadLayer = qvariant_cast<QLayer *>(m_quadEntity->property("layer"));
+            newLightItem->addComponent(quadLayer);
         }
         else
         {
@@ -119,7 +135,7 @@ void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, QSceneLoade
     baseItem->addComponent(picker);
 }
 
-void MainView3D::createMesh(QEntity *root, Qt3DRender::QLayer *layer, Qt3DRender::QEffect *effect)
+void MainView3D::createMesh(QEntity *root, QLayer *layer, QEffect *effect, QEntity *quadEntity)
 {
     QQmlComponent *fixtureComponent;
     fixtureComponent = new QQmlComponent(m_view->engine(), QUrl("qrc:/Fixture3DItem.qml"));
@@ -133,6 +149,8 @@ void MainView3D::createMesh(QEntity *root, Qt3DRender::QLayer *layer, Qt3DRender
         qWarning() << "Error during fixture component creation";
         return;
     }
+
+    m_quadEntity = quadEntity;
 
     newFixtureItem->setProperty("itemSource", "qrc:/moving_head.dae");
     newFixtureItem->setProperty("layer", QVariant::fromValue(layer));

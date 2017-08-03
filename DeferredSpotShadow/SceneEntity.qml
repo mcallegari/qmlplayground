@@ -49,21 +49,33 @@ Entity
     readonly property Camera camera: camera
     readonly property Layer layer: sceneLayer
 
-    function createMesh()
+    readonly property vector3d light1Pos : sphere1.transform.translation
+    readonly property vector3d light2Pos : sphere2.transform.translation
+
+    function createMesh(quadEntity)
     {
-        View3D.createMesh(root, sceneLayer, sceneMaterialEffect)
+        View3D.createMesh(root, sceneLayer, sceneMaterialEffect, quadEntity)
     }
 
-    PointLight
-    {
-        id: light1
+    property PointLight light: PointLight {
         color : "white"
-        intensity : 1.0
-        //ColorAnimation on color { from: "white"; to: "blue"; duration: 4000; loops: 2 }
-        //NumberAnimation on intensity { from: 0; to: 5.0; duration: 1000; loops: Animation.Infinite }
-    }
+        intensity : 0.8
 
-    components: [ light1 ]
+        property Transform transform: Transform {
+            translation: Qt.vector3d(0, 0, 10)
+        }
+
+        //ColorAnimation on color { from: "white"; to: "blue"; duration: 4000; loops: 2 }
+        /*SequentialAnimation on intensity {
+            NumberAnimation {
+                from: 0; to: 1.0; duration: 4000
+            }
+            NumberAnimation {
+                from: 1.0; to: 0.0; duration: 4000
+            }
+            loops: Animation.Infinite
+        }*/
+    }
 
     // Global elements
     Camera
@@ -92,17 +104,11 @@ Entity
 
     Entity
     {
-        id : sphere2
+        id : sphere1
 
         property Material material : Material {
             effect : sceneMaterialEffect
             parameters : Parameter { name : "meshColor"; value : "green" }
-        }
-
-        PointLight {
-            id: light2
-            color : "green"
-            intensity : 0.7
         }
 
         property Transform transform: Transform {
@@ -111,28 +117,22 @@ Entity
 
         components : [
             sphereMesh,
-            sphere2.transform,
-            sphere2.material,
-            light2,
+            sphere1.transform,
+            sphere1.material,
             sceneLayer
         ]
     }
 
     Entity
     {
-        id: sphere3
-        PointLight {
-            id: light3
-            color : "red"
-            intensity : 0.8
-        }
+        id: sphere2
 
         property Material material : Material {
             effect : sceneMaterialEffect
             parameters : Parameter { name : "meshColor"; value : "red" }
         }
 
-        Transform {
+        property Transform transform: Transform {
             id: light3Transform
             property real y: 2.0
             translation: Qt.vector3d(2, y, 7)
@@ -147,15 +147,14 @@ Entity
 
         components: [
             sphereMesh,
-            sphere3.material,
-            light3,
-            light3Transform,
+            sphere2.material,
+            sphere2.transform,
             sceneLayer
         ]
     }
 
-    // added to show alpha premultiply issue
-    Entity {
+    Entity
+    {
         id: plane
         property Material material : Material {
             effect : sceneMaterialEffect

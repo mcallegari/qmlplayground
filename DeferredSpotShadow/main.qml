@@ -84,7 +84,13 @@ Rectangle
 
             //FirstPersonCameraController { camera: sceneEntity.camera }
             OrbitCameraController { camera: sceneEntity.camera }
-            ScreenQuadEntity { id: screenQuadEntity }
+            ScreenQuadEntity
+            {
+                id: screenQuadEntity
+                ambientLight: sceneEntity.light
+                light1Pos: sceneEntity.light1Pos
+                light2Pos: sceneEntity.light2Pos
+            }
             SceneEntity { id: sceneEntity }
             //GBufferDebugger { id: debugEntity }
         } // sceneRoot
@@ -134,7 +140,7 @@ Rectangle
             Button
             {
                 text: "Add mesh"
-                onClicked: sceneEntity.createMesh()
+                onClicked: sceneEntity.createMesh(screenQuadEntity)
             }
         }
     }

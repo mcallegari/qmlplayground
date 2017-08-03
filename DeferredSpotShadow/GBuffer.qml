@@ -84,8 +84,8 @@ RenderTarget {
                 id : positionAttachment
                 width : 1024
                 height : 1024
-                // This texture format may not be supported by
-                // some OpenGL vendors when used as a color attachment
+                // We use RGBA32F here instead of a more fitting format because
+                // OpenGL vendors might not support other formats
                 format : Texture.RGBA32F
                 generateMipMaps : false
                 magnificationFilter : Texture.Linear
@@ -103,8 +103,8 @@ RenderTarget {
                 id : normalAttachment
                 width : 1024
                 height : 1024
-                // This texture format may not be supported by
-                // some OpenGL vendors when used as a color attachment
+                // We use RGBA32F here instead of a more fitting format because
+                // OpenGL vendors might not support other formats
                 format : Texture.RGBA32F
                 generateMipMaps : false
                 magnificationFilter : Texture.Linear

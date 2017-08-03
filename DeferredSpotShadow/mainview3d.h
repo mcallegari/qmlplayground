@@ -32,10 +32,9 @@ public:
     MainView3D(QQuickView *view, QObject *parent = 0);
     ~MainView3D() { }
 
-    Q_INVOKABLE void initializeFixture(quint32 fxID, QComponent *picker, QSceneLoader *loader,
-                                       QSpotLight *light, QLayer *layer, QEffect *effect);
+    Q_INVOKABLE void initializeFixture(quint32 fxID, QComponent *picker, QSceneLoader *loader, QLayer *layer, QEffect *effect);
 
-    Q_INVOKABLE void createMesh(QEntity *root, QLayer *layer, QEffect *effect);
+    Q_INVOKABLE void createMesh(QEntity *root, QLayer *layer, QEffect *effect, QEntity *quadEntity);
 
     Q_INVOKABLE void setPanTilt(quint32 fxID, int panDegrees, int tiltDegrees);
 
@@ -48,6 +47,8 @@ private:
      *  If the context is not detached, this is equal to $m_mainView,
      *  otherwise this is an indipendent view */
     QQuickView *m_view;
+
+    QEntity *m_quadEntity;
 
     /** Map of QLC+ fixture IDs and QML Entity items */
     QMap<quint32, FixtureMesh*> m_entitiesMap;
