@@ -69,7 +69,8 @@ Entity
         ]
     }
 
-    Entity {
+    Entity
+    {
         readonly property Transform transform2 : Transform { translation: root.light2Pos }
         readonly property PointLight light2 :  PointLight {
             color : "red"

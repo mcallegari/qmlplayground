@@ -116,7 +116,8 @@ void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, QSceneLoade
             }
 
             newLightItem->setParent(m_quadEntity);
-            newLightItem->setProperty("transform", QVariant::fromValue(transform));
+            QMetaObject::invokeMethod(newLightItem, "bindTransform",
+                    Q_ARG(QVariant, QVariant::fromValue(transform)));
 
             QLayer *quadLayer = qvariant_cast<QLayer *>(m_quadEntity->property("layer"));
             newLightItem->addComponent(quadLayer);

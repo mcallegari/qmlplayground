@@ -68,13 +68,10 @@ Entity
         property real panRotation: 0
         property real tiltRotation: 0
 
-        property vector3d panScale
-
         function bindPanTransform(t, maxDegrees)
         {
             console.log("Binding pan ----")
             fixtureEntity.panMaxDegrees = maxDegrees
-            panScale = t.scale3D
             t.rotationZ = Qt.binding(function() { return panRotation })
         }
 

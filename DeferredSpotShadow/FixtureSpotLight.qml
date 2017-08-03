@@ -4,7 +4,10 @@ import Qt3D.Extras 2.0
 
 Entity
 {
-    property Transform transform: null
+    function bindTransform(t)
+    {
+        transform.matrix = Qt.binding(function() { return t.matrix })
+    }
 
     readonly property SpotLight light:
         SpotLight
@@ -13,9 +16,14 @@ Entity
             localDirection: Qt.vector3d(0.0, -1.0, 0.0)
             color: "blue"
             cutOffAngle: 15
-            constantAttenuation: 1
+            constantAttenuation: 0.5
             intensity: 0.8
         }
+
+    Transform
+    {
+        id: transform
+    }
 
     components: [
         transform,
