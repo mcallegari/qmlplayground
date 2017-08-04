@@ -4,11 +4,14 @@ import Qt3D.Extras 2.0
 
 Entity
 {
+    property int lightIndex
+    property Effect lightPassEffect
+
     function bindTransform(t)
     {
         transform.matrix = Qt.binding(function() { return t.matrix })
     }
-
+/*
     readonly property SpotLight light:
         SpotLight
         {
@@ -19,6 +22,11 @@ Entity
             constantAttenuation: 0.5
             intensity: 0.8
         }
+*/
+    property Material material : Material {
+        effect : lightPassEffect
+        parameters : Parameter { name : "meshColor"; value : "green" }
+    }
 
     Transform
     {
@@ -26,6 +34,7 @@ Entity
     }
 
     components: [
+        material,
         transform,
         light
     ]

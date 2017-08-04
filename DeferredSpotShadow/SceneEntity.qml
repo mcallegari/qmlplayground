@@ -56,7 +56,7 @@ Entity
     {
         View3D.createMesh(root, sceneLayer, sceneMaterialEffect, quadEntity)
     }
-
+/*
     property PointLight light: PointLight {
         color : "white"
         intensity : 0.8
@@ -66,7 +66,7 @@ Entity
         }
 
         //ColorAnimation on color { from: "white"; to: "blue"; duration: 4000; loops: 2 }
-        /*SequentialAnimation on intensity {
+        SequentialAnimation on intensity {
             NumberAnimation {
                 from: 0; to: 1.0; duration: 4000
             }
@@ -74,9 +74,9 @@ Entity
                 from: 1.0; to: 0.0; duration: 4000
             }
             loops: Animation.Infinite
-        }*/
+        }
     }
-
+*/
     // Global elements
     Camera
     {

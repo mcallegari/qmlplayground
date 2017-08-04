@@ -25,7 +25,7 @@ struct Light {
 };
 
 uniform Light lights[MAX_LIGHTS];
-uniform int lightCount;
+uniform int lightsNumber;
 
 void main()
 {
@@ -37,7 +37,7 @@ void main()
     vec3 lightColor = vec3(0.0);
     vec3 s;
 
-    for (int i = 0; i < lightCount; ++i) {
+    for (int i = 0; i < lightsNumber; ++i) {
         float att = 1.0;
         if ( lights[i].type != TYPE_DIRECTIONAL ) {
             s = lights[i].position - pos;

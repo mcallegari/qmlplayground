@@ -22,11 +22,14 @@ typedef struct
     /** Reference to the head entity used by moving heads */
     QEntity *m_headItem;
 
+    unsigned int m_lightIndex;
 } FixtureMesh;
 
 class MainView3D : public QObject
 {
     Q_OBJECT
+
+    Q_PROPERTY(int lightsCount READ lightsCount WRITE setLightsCount NOTIFY lightsCountChanged)
 
 public:
     MainView3D(QQuickView *view, QObject *parent = 0);
@@ -38,9 +41,17 @@ public:
 
     Q_INVOKABLE void setPanTilt(quint32 fxID, int panDegrees, int tiltDegrees);
 
+    int lightsCount() const;
+    void setLightsCount(int lightsCount);
+
+signals:
+    void lightsCountChanged(int lightsCount);
+
 private:
     Qt3DCore::QTransform *getTransform(QEntity *entity);
     QMaterial *getMaterial(QEntity *entity);
+
+    unsigned int getNewLightIndex();
 
 private:
     /** Reference to the current view window.
@@ -52,5 +63,7 @@ private:
 
     /** Map of QLC+ fixture IDs and QML Entity items */
     QMap<quint32, FixtureMesh*> m_entitiesMap;
+
+    int m_lightsCount;
 };
 

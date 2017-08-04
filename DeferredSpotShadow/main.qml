@@ -87,7 +87,7 @@ Rectangle
             ScreenQuadEntity
             {
                 id: screenQuadEntity
-                ambientLight: sceneEntity.light
+                //ambientLight: sceneEntity.light
                 light1Pos: sceneEntity.light1Pos
                 light2Pos: sceneEntity.light2Pos
             }

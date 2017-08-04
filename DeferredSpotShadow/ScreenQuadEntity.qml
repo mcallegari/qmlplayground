@@ -45,41 +45,87 @@ Entity
 {
     id: root
     readonly property Layer layer: screenQuadLayer
+    readonly property Effect lightPassEffect: FinalEffect {}
 
-    property PointLight ambientLight
     property vector3d light1Pos
     property vector3d light2Pos
 
     Entity
     {
-        components: [ ambientLight, layer ]
-    }
-
-    Entity
-    {
-        readonly property Transform transform1 : Transform { translation: root.light1Pos }
-        readonly property PointLight light1 :  PointLight {
-            color : "green"
-            intensity : 0.5
+        property Material material1 : Material {
+            effect : lightPassEffect
+            parameters : [
+                Parameter { name: "lights[0].type"; value : 0 }, /* Point Light */
+                Parameter { name: "lights[0].position"; value : Qt.vector3d(0, 0, 10) },
+                Parameter { name: "lights[0].color"; value : "white" },
+                Parameter { name: "lights[0].intensity"; value : 0.8 },
+                Parameter { name: "lights[0].constantAttenuation"; value: 1.0 },
+                Parameter { name: "lights[0].linearAttenuation"; value: 0.0 },
+                Parameter { name: "lights[0].quadraticAttenuation"; value: 0.0 }
+            ]
         }
+
         components: [
-            transform1,
-            light1,
-            layer
+            material1,
+            screenQuadLayer
         ]
     }
 
     Entity
     {
+        /*
+        readonly property Transform transform1 : Transform { translation: root.light1Pos }
+        readonly property PointLight light1 :  PointLight {
+            color : "green"
+            intensity : 0.5
+        }
+        */
+
+        property Material material2 : Material {
+            effect : lightPassEffect
+            parameters : [
+                Parameter { name: "lights[1].type"; value : 0 }, /* Point Light */
+                Parameter { name: "lights[1].position"; value : root.light1Pos },
+                Parameter { name: "lights[1].color"; value : "green" },
+                Parameter { name: "lights[1].intensity"; value : 0.5 },
+                Parameter { name: "lights[1].constantAttenuation"; value: 1.0 },
+                Parameter { name: "lights[1].linearAttenuation"; value: 0.0 },
+                Parameter { name: "lights[1].quadraticAttenuation"; value: 0.0 }
+            ]
+        }
+
+        components: [
+            material2,
+            screenQuadLayer
+        ]
+    }
+
+    Entity
+    {
+        /*
         readonly property Transform transform2 : Transform { translation: root.light2Pos }
         readonly property PointLight light2 :  PointLight {
             color : "red"
             intensity : 0.5
         }
+        */
+
+        property Material material3 : Material {
+            effect : lightPassEffect
+            parameters : [
+                Parameter { name: "lights[2].type"; value : 0 }, /* Point Light */
+                Parameter { name: "lights[2].position"; value: root.light2Pos },
+                Parameter { name: "lights[2].color"; value: "red" },
+                Parameter { name: "lights[2].intensity"; value: 0.5 },
+                Parameter { name: "lights[2].constantAttenuation"; value: 1.0 },
+                Parameter { name: "lights[2].linearAttenuation"; value: 0.0 },
+                Parameter { name: "lights[2].quadraticAttenuation"; value: 0.0 }
+            ]
+        }
+
         components: [
-            transform2,
-            light2,
-            layer
+            material3,
+            screenQuadLayer
         ]
     }
 
@@ -103,7 +149,8 @@ Entity
             },
 
             Material {
-                effect : FinalEffect {}
+                effect: lightPassEffect
+                parameters: Parameter { name : "lightsNumber"; value : 3 }
             }
         ]
     }

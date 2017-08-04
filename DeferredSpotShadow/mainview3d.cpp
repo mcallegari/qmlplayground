@@ -6,6 +6,7 @@
 MainView3D::MainView3D(QQuickView *view, QObject *parent)
     : QObject(parent)
     , m_view(view)
+    , m_lightsCount(0)
 {
     //qRegisterMetaType<Qt3DCore::QEntity*>();
 }
@@ -40,6 +41,19 @@ QMaterial *MainView3D::getMaterial(QEntity *entity)
     }
 
     return NULL;
+}
+
+unsigned int MainView3D::getNewLightIndex()
+{
+    unsigned int newIdx = UINT_MAX;
+
+    for (FixtureMesh *mesh : m_entitiesMap.values())
+    {
+        if (mesh->m_lightIndex < newIdx)
+            newIdx = mesh->m_lightIndex;
+    }
+
+    return newIdx == UINT_MAX ? 0 : newIdx + 1;
 }
 
 void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, QSceneLoader *loader,
@@ -102,31 +116,38 @@ void MainView3D::initializeFixture(quint32 fxID, QComponent *picker, QSceneLoade
             if (material != NULL)
                 material->setEffect(effect);
             meshRef->m_headItem->addComponent(layer);
-
-            QQmlComponent *lightComponent = new QQmlComponent(m_view->engine(), QUrl("qrc:/FixtureSpotLight.qml"));
-            if (lightComponent->isError())
-                qDebug() << lightComponent->errors();
-
-            QEntity *newLightItem = qobject_cast<QEntity *>(lightComponent->create());
-
-            if (newLightItem == NULL)
-            {
-                qWarning() << "Error during light component creation";
-                return;
-            }
-
-            newLightItem->setParent(m_quadEntity);
-            QMetaObject::invokeMethod(newLightItem, "bindTransform",
-                    Q_ARG(QVariant, QVariant::fromValue(transform)));
-
-            QLayer *quadLayer = qvariant_cast<QLayer *>(m_quadEntity->property("layer"));
-            newLightItem->addComponent(quadLayer);
         }
         else
         {
             meshRef->m_rootTransform = transform;
             baseItem = meshRef->m_headItem;
         }
+
+
+        /* Add a spotlight */
+        QQmlComponent *lightComponent = new QQmlComponent(m_view->engine(), QUrl("qrc:/FixtureSpotLight.qml"));
+        if (lightComponent->isError())
+            qDebug() << lightComponent->errors();
+
+        QEntity *newLightItem = qobject_cast<QEntity *>(lightComponent->create());
+
+        if (newLightItem == NULL)
+        {
+            qWarning() << "Error during light component creation";
+            return;
+        }
+
+        //newLightItem->setParent(meshRef->m_headItem);
+        meshRef->m_lightIndex = getNewLightIndex();
+
+        qDebug() << "Attaching a new spotlight with index" << meshRef->m_lightIndex;
+
+        newLightItem->setParent(m_quadEntity);
+        QMetaObject::invokeMethod(newLightItem, "bindTransform",
+                Q_ARG(QVariant, QVariant::fromValue(transform)));
+
+        QLayer *quadLayer = qvariant_cast<QLayer *>(m_quadEntity->property("layer"));
+        newLightItem->addComponent(quadLayer);
     }
 
     baseItem->addComponent(layer);
@@ -176,4 +197,18 @@ void MainView3D::setPanTilt(quint32 fxID, int panDegrees, int tiltDegrees)
     QMetaObject::invokeMethod(fxItem, "setPosition",
             Q_ARG(QVariant, panDegrees),
             Q_ARG(QVariant, tiltDegrees));
+}
+
+int MainView3D::lightsCount() const
+{
+    return m_lightsCount;
+}
+
+void MainView3D::setLightsCount(int lightsCount)
+{
+    if (m_lightsCount == lightsCount)
+        return;
+
+    m_lightsCount = lightsCount;
+    emit lightsCountChanged(m_lightsCount);
 }
