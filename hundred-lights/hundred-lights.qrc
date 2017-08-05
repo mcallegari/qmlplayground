@@ -6,7 +6,7 @@
         <file>SceneEffect.qml</file>
         <file>GBuffer.qml</file>
         <file>ScreenQuadEntity.qml</file>
-        <file>SphereEntity.qml</file>
+        <file>AnimatedEntity.qml</file>
         <file>SceneEntity.qml</file>
         <file>final_es2.vert</file>
         <file>final_gl3.frag</file>

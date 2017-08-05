@@ -7,7 +7,7 @@ uniform vec2 winSize;
 
 out vec4 fragColor;
 
-const int MAX_LIGHTS = 100;
+const int MAX_LIGHTS = 102;
 const int TYPE_POINT = 0;
 const int TYPE_DIRECTIONAL = 1;
 const int TYPE_SPOT = 2;

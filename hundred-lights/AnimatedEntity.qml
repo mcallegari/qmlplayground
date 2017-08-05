@@ -11,17 +11,10 @@ Entity
     property real xPos: 0.0
     property real zPos: 0.0
 
+    property ConeMesh mesh
     property Effect geomPassEffect
     property Layer targetLayer
     property color meshColor: '#'+Math.random().toString(16).substr(-6);
-
-    SphereMesh
-    {
-        id : sphereMesh
-        rings: 50
-        slices: 100
-        radius: 0.5
-    }
 
     property Material material : Material {
         effect : geomPassEffect
@@ -43,7 +36,7 @@ Entity
     }
 
     components : [
-        sphereMesh,
+        mesh,
         sphere.material,
         sphereTransform,
         sphere.targetLayer

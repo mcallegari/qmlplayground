@@ -66,10 +66,12 @@ Entity {
         viewCenter: Qt.vector3d( 0.0, 0.0, 10.0 )
     }
 
-    SphereMesh {
-        id : sphereMesh
-        rings: 50
-        slices: 100
+    ConeMesh
+    {
+        id: sceneMesh
+        length: 1.5
+        bottomRadius: 0.5
+        topRadius: 0.2
     }
 
     SceneEffect { id : sceneMaterialEffect }
@@ -83,14 +85,17 @@ Entity {
 
         var tmp = lightsPos
 
+        // if you change the mesh number, change also the maximum
+        // number of lights in the final fragment shader
         for (var z = 0; z < 10; z++)
         {
             xPos = 10
             for (var x = 0; x < 10; x++)
             {
-                var component = Qt.createComponent("SphereEntity.qml");
-                var sphere = component.createObject(root, {"xPos": xPos, "zPos": zPos, "geomPassEffect": sceneMaterialEffect,
-                                                    "targetLayer": sceneLayer });
+                var component = Qt.createComponent("AnimatedEntity.qml");
+                var sphere = component.createObject(root,
+                                                    {"xPos": xPos, "zPos": zPos, "mesh": sceneMesh,
+                                                     "geomPassEffect": sceneMaterialEffect, "targetLayer": sceneLayer });
                 tmp.push(sphere)
                 xPos -= 2
             }

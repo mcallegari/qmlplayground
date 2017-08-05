@@ -50,6 +50,7 @@ Entity
     property var lightsArray: []
     property bool sceneReady: false
     property bool quadReady: false
+    property int lightsNum
 
     function sceneCreated()
     {
@@ -65,29 +66,55 @@ Entity
     {
         var parameters = [].slice.apply(lightPassMaterial.parameters)
 
-        for (var i = 0; i < lightsArray.length; i++)
+        // add a white "ambient" pointlight way above the ground
+        parameters.push(uniformComp.createObject(lightPassMaterial,
+                        { name: "lightsArray[0].type", value: 0 }))
+        parameters.push(uniformComp.createObject(lightPassMaterial,
+                        { name: "lightsArray[0].position", value: Qt.vector3d(0, 10, 0) }))
+        parameters.push(uniformComp.createObject(lightPassMaterial,
+                        { name: "lightsArray[0].color", value: Qt.rgba(1.0, 1.0, 1.0, 1.0) }))
+        parameters.push(uniformComp.createObject(lightPassMaterial,
+                        { name: "lightsArray[0].intensity", value: 0.7 }))
+        parameters.push(uniformComp.createObject(lightPassMaterial,
+                        { name: "lightsArray[0].direction", value: Qt.vector3d(0.0, -1.0, 0.0) }))
+        parameters.push(uniformComp.createObject(lightPassMaterial,
+                        { name: "lightsArray[0].constantAttenuation", value: 1.0 }))
+        parameters.push(uniformComp.createObject(lightPassMaterial,
+                        { name: "lightsArray[0].linearAttenuation", value: 0.0 }))
+        parameters.push(uniformComp.createObject(lightPassMaterial,
+                        { name: "lightsArray[0].quadraticAttenuation", value: 0.0 }))
+
+        var i = 1
+        lightsArray.forEach(function (light)
         {
             parameters.push(uniformComp.createObject(lightPassMaterial,
-                            { name: "lightsArray[%1].type".arg(i), value: 0 }))
+                            { name: "lightsArray[%1].type".arg(i), value: 2 }))
             parameters.push(uniformComp.createObject(lightPassMaterial,
-                            { name: "lightsArray[%1].position".arg(i), value: Qt.binding(function() { return lightsArray[i].transform.translation }) }))
+                            { name: "lightsArray[%1].position".arg(i), value: Qt.binding(function() { return light.transform.translation }) }))
             parameters.push(uniformComp.createObject(lightPassMaterial,
-                            { name: "lightsArray[%1].color".arg(i), value: lightsArray[i].meshColor }))
+                            { name: "lightsArray[%1].color".arg(i), value: light.meshColor }))
             parameters.push(uniformComp.createObject(lightPassMaterial,
-                            { name: "lightsArray[%1].intensity".arg(i), value: 0.10 }))
+                            { name: "lightsArray[%1].intensity".arg(i), value: 0.5 }))
             parameters.push(uniformComp.createObject(lightPassMaterial,
-                            { name: "lightsArray[%1].constantAttenuation".arg(i), value: 1.0 }))
-            parameters.push(uniformComp.createObject(lightPassMaterial,
-                            { name: "lightsArray[%1].linearAttenuation".arg(i), value: 0.0 }))
+                            { name: "lightsArray[%1].constantAttenuation".arg(i), value: 2.0 }))
             parameters.push(uniformComp.createObject(lightPassMaterial,
                             { name: "lightsArray[%1].linearAttenuation".arg(i), value: 0.0 }))
-        }
+            parameters.push(uniformComp.createObject(lightPassMaterial,
+                            { name: "lightsArray[%1].quadraticAttenuation".arg(i), value: 0.0 }))
+            parameters.push(uniformComp.createObject(lightPassMaterial,
+                            { name: "lightsArray[%1].direction".arg(i), value: Qt.vector3d(0.0, -1.0, 0.0) }))
+            parameters.push(uniformComp.createObject(lightPassMaterial,
+                            { name: "lightsArray[%1].cutOffAngle".arg(i), value: 15.0 }))
+            i++
+        })
+
+        lightsNum = 1 + lightsArray.length
 
         parameters.push(uniformComp.createObject(lightPassMaterial,
-                        { name: "lightsNumber", value: lightsArray.length }))
+                        { name: "lightsNumber", value: lightsNum }))
 
         // dump the uniform list
-        parameters.forEach(function (p) { console.log(p.name, '=', p.value); })
+        //parameters.forEach(function (p) { console.log(p.name, '=', p.value); })
 
         lightPassMaterial.parameters = parameters
     }
@@ -126,18 +153,6 @@ Entity
                             updateUniforms()
                         }
                 }
-                /*
-                parameters: [
-                    Parameter { name: "lightsNumber"; value : 1 },
-                    Parameter { name: "lightsArray[0].type"; value : 0 }, // Point Light
-                    Parameter { name: "lightsArray[0].position"; value : Qt.vector3d(0, 0, 10) },
-                    Parameter { name: "lightsArray[0].color"; value : "white" },
-                    Parameter { name: "lightsArray[0].intensity"; value : 0.8 },
-                    Parameter { name: "lightsArray[0].constantAttenuation"; value: 1.0 },
-                    Parameter { name: "lightsArray[0].linearAttenuation"; value: 0.0 },
-                    Parameter { name: "lightsArray[0].quadraticAttenuation"; value: 0.0 }
-                ]
-                */
             }
         ]
     }

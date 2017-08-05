@@ -8,7 +8,7 @@ OTHER_FILES += \
     DeferredRenderer.qml \
     FinalEffect.qml \
     SceneEffect.qml \
-    SphereEntity.qml \
+    AnimatedEntity.qml \
     SceneEntity.qml \
     ScreenQuadEntity.qml \
     GBuffer.qml
