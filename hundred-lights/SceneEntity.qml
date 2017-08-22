@@ -49,6 +49,9 @@ Entity {
     readonly property Camera camera: camera
     readonly property Layer layer: sceneLayer
 
+    property int itemRows: 10
+    property int itemColumns: 10
+
     property var lightsPos: []
 
     signal sceneCreated()
@@ -66,12 +69,11 @@ Entity {
         viewCenter: Qt.vector3d( 0.0, 0.0, 10.0 )
     }
 
-    ConeMesh
-    {
-        id: sceneMesh
+    ConeMesh {
+        id: coneMesh
         length: 1.5
         bottomRadius: 0.5
-        topRadius: 0.2
+        topRadius: 0
     }
 
     SceneEffect { id : sceneMaterialEffect }
@@ -80,27 +82,28 @@ Entity {
 
     Component.onCompleted:
     {
-        var xPos = 10
-        var zPos = 10
+        var xPos = -itemColumns
+        var zPos = -itemRows
 
         var tmp = lightsPos
 
         // if you change the mesh number, change also the maximum
         // number of lights in the final fragment shader
-        for (var z = 0; z < 10; z++)
+        for (var z = 0; z < itemRows; z++)
         {
-            xPos = 10
-            for (var x = 0; x < 10; x++)
+            xPos = -itemColumns
+            for (var x = 0; x < itemColumns; x++)
             {
                 var component = Qt.createComponent("AnimatedEntity.qml");
-                var sphere = component.createObject(root,
-                                                    {"xPos": xPos, "zPos": zPos, "mesh": sceneMesh,
-                                                     "geomPassEffect": sceneMaterialEffect, "targetLayer": sceneLayer });
-                tmp.push(sphere)
-                xPos -= 2
+                var mesh = component.createObject(root,
+                                                  {"xPos": xPos, "zPos": zPos, "mesh": coneMesh,
+                                                   "geomPassEffect": sceneMaterialEffect, "targetLayer": sceneLayer });
+                tmp.push(mesh)
+                xPos += 2
             }
-            zPos -= 2
+            zPos += 2
         }
+
         lightsPos = tmp
         sceneCreated()
     }

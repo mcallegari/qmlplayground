@@ -77,18 +77,11 @@ Entity {
     ScreenQuadEntity {
         id: screenQuadEntity
         lightsArray: sceneEntity.lightsPos
-        /*
-        baseLight: sceneEntity.light
-        light1Pos: sceneEntity.light1Pos
-        light2Pos: sceneEntity.light2Pos
-        light3Pos: sceneEntity.light3Pos
-        light4Pos: sceneEntity.light4Pos
-        */
+        camera: sceneEntity.camera
     }
-    SceneEntity
-    {
+    SceneEntity {
         id: sceneEntity
-        onSceneCreated: screenQuadEntity.sceneCreated();
+        onSceneCreated: screenQuadEntity.updateUniforms()
     }
-    //GBufferDebugger { id: debugEntity }
+    GBufferDebugger { id: debugEntity }
 }

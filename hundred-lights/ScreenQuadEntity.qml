@@ -42,28 +42,17 @@ import Qt3D.Core 2.0
 import Qt3D.Render 2.0
 import Qt3D.Extras 2.0
 
-Entity
-{
+Entity {
     id: root
 
     readonly property Layer layer: screenQuadLayer
+    property Camera camera
     property var lightsArray: []
     property bool sceneReady: false
     property bool quadReady: false
     property int lightsNum
 
-    function sceneCreated()
-    {
-        sceneReady = true
-        if (sceneReady && quadReady)
-            updateUniforms()
-    }
-
-    //property vector3d l1pos: lightsArray[0].transform.translation
-    //onL1posChanged: console.log("Light 1 position changed: " + l1pos)
-
-    function updateUniforms()
-    {
+    function updateUniforms() {
         var parameters = [].slice.apply(lightPassMaterial.parameters)
 
         // add a white "ambient" pointlight way above the ground
@@ -74,9 +63,7 @@ Entity
         parameters.push(uniformComp.createObject(lightPassMaterial,
                         { name: "lightsArray[0].color", value: Qt.rgba(1.0, 1.0, 1.0, 1.0) }))
         parameters.push(uniformComp.createObject(lightPassMaterial,
-                        { name: "lightsArray[0].intensity", value: 0.7 }))
-        parameters.push(uniformComp.createObject(lightPassMaterial,
-                        { name: "lightsArray[0].direction", value: Qt.vector3d(0.0, -1.0, 0.0) }))
+                        { name: "lightsArray[0].intensity", value: 0.8 }))
         parameters.push(uniformComp.createObject(lightPassMaterial,
                         { name: "lightsArray[0].constantAttenuation", value: 1.0 }))
         parameters.push(uniformComp.createObject(lightPassMaterial,
@@ -85,8 +72,7 @@ Entity
                         { name: "lightsArray[0].quadraticAttenuation", value: 0.0 }))
 
         var i = 1
-        lightsArray.forEach(function (light)
-        {
+        lightsArray.forEach(function (light) {
             parameters.push(uniformComp.createObject(lightPassMaterial,
                             { name: "lightsArray[%1].type".arg(i), value: 2 }))
             parameters.push(uniformComp.createObject(lightPassMaterial,
@@ -102,7 +88,14 @@ Entity
             parameters.push(uniformComp.createObject(lightPassMaterial,
                             { name: "lightsArray[%1].quadraticAttenuation".arg(i), value: 0.0 }))
             parameters.push(uniformComp.createObject(lightPassMaterial,
-                            { name: "lightsArray[%1].direction".arg(i), value: Qt.vector3d(0.0, -1.0, 0.0) }))
+                              { name: "lightsArray[%1].direction".arg(i),
+                                value: Qt.binding(function()
+                                       {
+                                          var lightMatrix = light.transform.matrix;
+                                          lightMatrix = lightMatrix.times(Qt.vector4d(0.0, -1.0, 0.0, 0.0))
+                                          return lightMatrix.toVector3d()
+                                       })
+                              }))
             parameters.push(uniformComp.createObject(lightPassMaterial,
                             { name: "lightsArray[%1].cutOffAngle".arg(i), value: 15.0 }))
             i++
@@ -114,14 +107,13 @@ Entity
                         { name: "lightsNumber", value: lightsNum }))
 
         // dump the uniform list
-        //parameters.forEach(function (p) { console.log(p.name, '=', p.value); })
+        parameters.forEach(function (p) { console.log(p.name, '=', p.value); })
 
         lightPassMaterial.parameters = parameters
     }
 
     // dummy component to create a uniform
-    Component
-    {
+    Component {
         id: uniformComp
         Parameter {}
     }
@@ -146,13 +138,7 @@ Entity
 
             Material {
                 id: lightPassMaterial
-                effect : FinalEffect {
-                    Component.onCompleted: {
-                        quadReady = true
-                        if (sceneReady && quadReady)
-                            updateUniforms()
-                        }
-                }
+                effect : FinalEffect { }
             }
         ]
     }
