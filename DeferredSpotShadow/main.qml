@@ -51,49 +51,58 @@ Rectangle
         id: scene3d
         objectName: "scene3DItem"
         z: 1
-        width: parent.width * 0.75
-        height: parent.height
+        anchors.fill: parent
         aspects: ["input", "logic"]
-        cameraAspectRatioMode: Scene3D.AutomaticAspectRatio
 
         Entity
         {
-            id: sceneRoot
-            objectName: "sceneRootEntity"
-
-            RenderSettings
-            {
-                id : renderSettings
-                activeFrameGraph:
-                    DeferredRenderer
-                    {
-                        id: frameGraph
-                        camera : sceneEntity.camera
-                        gBuffer: GBuffer {}
-                        sceneLayer: sceneEntity.layer
-                        screenQuadLayer: screenQuadEntity.layer
-                        //debugLayer: debugEntity.layer
-                    }
-                renderPolicy: RenderSettings.Always
-            }
-
-            // Event Source will be set by the Qt3DQuickWindow
-            InputSettings { id: inputSettings  }
-
-            components: [ renderSettings, inputSettings ]
+            //Component.onCompleted: contextManager.enableContext("3D", true, scene3d)
 
             //FirstPersonCameraController { camera: sceneEntity.camera }
-            OrbitCameraController { camera: sceneEntity.camera }
-            ScreenQuadEntity
+
+            OrbitCameraController
             {
-                id: screenQuadEntity
-                //ambientLight: sceneEntity.light
-                light1Pos: sceneEntity.light1Pos
-                light2Pos: sceneEntity.light2Pos
+                id: camController
+                camera: sceneEntity.camera
+                linearSpeed: 40.0
+                lookSpeed: 300.0
             }
-            SceneEntity { id: sceneEntity }
+
+            SceneEntity
+            {
+                id: sceneEntity
+                viewSize: Qt.size(scene3d.width, scene3d.height)
+            }
+
+            ScreenQuadEntity { id: screenQuadEntity }
+
+            GBuffer { id: gBufferTarget }
+
+            ForwardTarget
+            {
+                id: forwardTarget
+                depthAttachment: gBufferTarget.depth
+            }
+
             //GBufferDebugger { id: debugEntity }
-        } // sceneRoot
+
+            components : [
+                DeferredRenderer
+                {
+                    id: frameGraph
+                    camera : sceneEntity.camera
+                    gBuffer: gBufferTarget
+                    forward: forwardTarget
+                    sceneDeferredLayer: sceneEntity.deferredLayer
+                    sceneSelectionLayer: sceneEntity.selectionLayer
+                    screenQuadLayer: screenQuadEntity.layer
+                    windowWidth: scene3d.width
+                    windowHeight: scene3d.height
+                    //debugLayer: debugEntity.layer
+                },
+                InputSettings {}
+            ]
+        } // Entity
     } // scene3d
 
     Rectangle
@@ -120,7 +129,7 @@ Rectangle
                 from: 0
                 to: 360
                 wheelEnabled: true
-                onValueChanged: View3D.setPanTilt(0, value, tiltSlider.value)
+                onValueChanged: View3D.setPanTilt(value, tiltSlider.value)
             }
 
             Text
@@ -134,13 +143,27 @@ Rectangle
                 from: 0
                 to: 270
                 wheelEnabled: true
-                onValueChanged:  View3D.setPanTilt(0, panSlider.value, value)
+                onValueChanged: View3D.setPanTilt(panSlider.value, value)
+            }
+
+            Text
+            {
+                text: "Ambient light"
+            }
+
+            Slider
+            {
+                from: 0
+                to: 1.0
+                value: View3D.ambientIntensity
+                wheelEnabled: true
+                onValueChanged:  View3D.ambientIntensity = value
             }
 
             Button
             {
                 text: "Add mesh"
-                onClicked: sceneEntity.createMesh(screenQuadEntity)
+                onClicked: View3D.createFixtureItem()
             }
         }
     }

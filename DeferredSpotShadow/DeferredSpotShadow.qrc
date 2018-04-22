@@ -2,22 +2,24 @@
     <qresource prefix="/">
         <file>main.qml</file>
         <file>DeferredRenderer.qml</file>
-        <file>FinalEffect.qml</file>
         <file>Fixture3DItem.qml</file>
-        <file>FixtureSpotLight.qml</file>
+        <file>ForwardTarget.qml</file>
         <file>GBuffer.qml</file>
         <file>GBufferDebugger.qml</file>
-        <file>SceneEffect.qml</file>
+        <file>GeometryPassEffect.qml</file>
+        <file>LightPassEffect.qml</file>
         <file>SceneEntity.qml</file>
         <file>ScreenQuadEntity.qml</file>
+        <file>SelectionEntity.qml</file>
+        <file>SelectionGeometry.qml</file>
         <file>moving_head.dae</file>
-        <file>debug_gl3.vert</file>
-        <file>debug_gl3.frag</file>
-        <file>debug_es2.frag</file>
-        <file>debug_es2.vert</file>
-        <file>final_es2.vert</file>
-        <file>final_gl3.frag</file>
-        <file>final_gl3.vert</file>
-        <file>final_es2.frag</file>
+        <file alias="debug_gl3.vert">shaders/debug_gl3.vert</file>
+        <file alias="debug_gl3.frag">shaders/debug_gl3.frag</file>
+        <file alias="debug_es2.frag">shaders/debug_es2.frag</file>
+        <file alias="debug_es2.vert">shaders/debug_es2.vert</file>
+        <file alias="lights_es2.frag">shaders/lights_es2.frag</file>
+        <file alias="lights_es2.vert">shaders/lights_es2.vert</file>
+        <file alias="lights_gl3.frag">shaders/lights_gl3.frag</file>
+        <file alias="lights_gl3.vert">shaders/lights_gl3.vert</file>
     </qresource>
 </RCC>

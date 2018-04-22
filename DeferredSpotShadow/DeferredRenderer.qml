@@ -1,132 +1,191 @@
-/****************************************************************************
-**
-** Copyright (C) 2014 Klaralvdalens Datakonsult AB (KDAB).
-** Contact: https://www.qt.io/licensing/
-**
-** This file is part of the Qt3D module of the Qt Toolkit.
-**
-** $QT_BEGIN_LICENSE:BSD$
-** Commercial License Usage
-** Licensees holding valid commercial Qt licenses may use this file in
-** accordance with the commercial license agreement provided with the
-** Software or, alternatively, in accordance with the terms contained in
-** a written agreement between you and The Qt Company. For licensing terms
-** and conditions see https://www.qt.io/terms-conditions. For further
-** information use the contact form at https://www.qt.io/contact-us.
-**
-** BSD License Usage
-** Alternatively, you may use this file under the terms of the BSD license
-** as follows:
-**
-** "Redistribution and use in source and binary forms, with or without
-** modification, are permitted provided that the following conditions are
-** met:
-**   * Redistributions of source code must retain the above copyright
-**     notice, this list of conditions and the following disclaimer.
-**   * Redistributions in binary form must reproduce the above copyright
-**     notice, this list of conditions and the following disclaimer in
-**     the documentation and/or other materials provided with the
-**     distribution.
-**   * Neither the name of The Qt Company Ltd nor the names of its
-**     contributors may be used to endorse or promote products derived
-**     from this software without specific prior written permission.
-**
-**
-** THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-** "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-** LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-** A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-** OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-** SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-** LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-** DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-** THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-** (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-** OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."
-**
-** $QT_END_LICENSE$
-**
-****************************************************************************/
+/*
+  Q Light Controller Plus
+  DeferredRenderer.qml
+
+  Copyright (c) Massimo Callegari
+
+  Licensed under the Apache License, Version 2.0 (the "License");
+  you may not use this file except in compliance with the License.
+  You may obtain a copy of the License at
+
+      http://www.apache.org/licenses/LICENSE-2.0.txt
+
+  Unless required by applicable law or agreed to in writing, software
+  distributed under the License is distributed on an "AS IS" BASIS,
+  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+  See the License for the specific language governing permissions and
+  limitations under the License.
+*/
 
 import Qt3D.Core 2.0
 import Qt3D.Render 2.0
 
-Viewport {
-    id: root
-    normalizedRect : Qt.rect(0.0, 0.0, 1.0, 1.0)
+RenderSettings
+{
+    pickingSettings.pickMethod: PickingSettings.TrianglePicking
+    renderPolicy: RenderSettings.Always
 
     property GBuffer gBuffer
-    property alias camera : sceneCameraSelector.camera
-    property alias sceneLayer: sceneLayerFilter.layers
-    property alias screenQuadLayer: screenQuadLayerFilter.layers
-    property alias debugLayer: debugLayerFilter.layers
+    property ForwardTarget forward
+    property alias camera: sceneCameraSelector.camera
+    property alias sceneDeferredLayer: sceneDeferredLayerFilter.layers
+    property alias sceneSelectionLayer: sceneSelectionLayerFilter.layers
+    property Layer screenQuadLayer
+    //property alias debugLayer: debugLayerFilter.layers
 
-    readonly property real windowWidth: surfaceSelector.surface !== null ? surfaceSelector.surface.width: 0
-    readonly property real windowHeight: surfaceSelector.surface !== null ? surfaceSelector.surface.height: 0
+    property real windowWidth: 0
+    property real windowHeight: 0
 
-    RenderSurfaceSelector {
-        id: surfaceSelector
+    activeFrameGraph:
+        Viewport
+        {
+            id: root
+            normalizedRect: Qt.rect(0.0, 0.0, 1.0, 1.0)
 
-        CameraSelector {
-            id : sceneCameraSelector
+            RenderSurfaceSelector
+            {
+                id: surfaceSelector
 
-            // Fill G-Buffer
-            LayerFilter {
-                id: sceneLayerFilter
-                RenderTargetSelector {
-                    id : gBufferTargetSelector
-                    target: gBuffer
+                CameraSelector
+                {
+                    id: sceneCameraSelector
 
-                    ClearBuffers {
-                        buffers: ClearBuffers.ColorDepthBuffer
+                    // Fill G-Buffer
+                    LayerFilter
+                    {
+                        id: sceneDeferredLayerFilter
+                        RenderTargetSelector
+                        {
+                            id: gBufferTargetSelector
+                            target: gBuffer
 
-                        RenderPassFilter {
-                            id : geometryPass
-                            matchAny : FilterKey { name : "pass"; value : "geometry" }
-                        }
-                    }
-                }
-            }
+                            ClearBuffers
+                            {
+                                buffers: ClearBuffers.ColorDepthBuffer
 
-            TechniqueFilter {
-                parameters: [
-                    Parameter { name: "color"; value : gBuffer.color },
-                    Parameter { name: "position"; value : gBuffer.position },
-                    Parameter { name: "normal"; value : gBuffer.normal },
-                    Parameter { name: "depth"; value : gBuffer.depth },
-                    Parameter { name: "winSize"; value : Qt.size(windowWidth, windowHeight) }
-                ]
-
-                RenderStateSet {
-                    // Render FullScreen Quad
-                    renderStates: [
-                        BlendEquation { blendFunction: BlendEquation.Add },
-                        BlendEquationArguments { sourceRgb: BlendEquationArguments.SourceAlpha; destinationRgb: BlendEquationArguments.DestinationColor }
-                    ]
-                    LayerFilter {
-                        id: screenQuadLayerFilter
-                        ClearBuffers {
-                            buffers: ClearBuffers.ColorDepthBuffer
-                            RenderPassFilter {
-                                matchAny : FilterKey { name : "pass"; value : "final" }
-                                parameters: Parameter { name: "winSize"; value : Qt.size(windowWidth, windowHeight) }
-
+                                RenderPassFilter
+                                {
+                                    id: geometryPass
+                                    matchAny: FilterKey { name: "pass"; value: "geometry" }
+                                }
                             }
                         }
                     }
-                    // RenderDebug layer
-                    LayerFilter {
-                        id: debugLayerFilter
-                        Viewport {
-                            normalizedRect : Qt.rect(0.5, 0.5, 0.5, 0.5)
-                            RenderPassFilter {
-                                matchAny : FilterKey { name : "pass"; value : "final" }
-                                parameters: Parameter { name: "winSize"; value : Qt.size(windowWidth * 0.5, windowHeight * 0.5) }
+
+                    // Fill selection FBO
+                    LayerFilter
+                    {
+                        id: sceneSelectionLayerFilter
+                        RenderTargetSelector
+                        {
+                            id: selectionTargetSelector
+                            target: forward
+
+                            ClearBuffers
+                            {
+                                buffers: ClearBuffers.ColorBuffer
+
+                                RenderPassFilter
+                                {
+                                    id: selectionPass
+                                    matchAny: FilterKey { name: "pass"; value: "geometry" }
+                                }
                             }
                         }
                     }
-                }
-            }
-        }
-    }
+
+                    // Lights pass technique
+                    TechniqueFilter
+                    {
+                        parameters: [
+                            Parameter { name: "color"; value: gBuffer.color },
+                            Parameter { name: "position"; value: gBuffer.position },
+                            Parameter { name: "normal"; value: gBuffer.normal },
+                            Parameter { name: "depth"; value: gBuffer.depth },
+                            Parameter { name: "winSize"; value: Qt.size(windowWidth, windowHeight) }
+                        ]
+
+                        RenderStateSet
+                        {
+                            // Render FullScreen Quad
+                            renderStates: [
+                                BlendEquation { blendFunction: BlendEquation.Add },
+                                BlendEquationArguments
+                                {
+                                    sourceRgb: BlendEquationArguments.SourceAlpha
+                                    destinationRgb: BlendEquationArguments.DestinationColor
+                                }
+                            ]
+                            LayerFilter
+                            {
+                                //id: screenQuadLayerFilter
+                                layers: screenQuadLayer
+
+                                ClearBuffers
+                                {
+                                    buffers: ClearBuffers.ColorDepthBuffer
+                                    RenderPassFilter
+                                    {
+                                        matchAny: FilterKey { name: "pass"; value: "lights" }
+                                        parameters: Parameter { name: "winSize"; value: Qt.size(windowWidth, windowHeight) }
+
+                                    }
+                                }
+                            }
+/*
+                            // RenderDebug layer
+                            LayerFilter
+                            {
+                                id: debugLayerFilter
+                                Viewport
+                                {
+                                    normalizedRect: Qt.rect(0.5, 0.5, 0.5, 0.5)
+                                    RenderPassFilter
+                                    {
+                                        matchAny: FilterKey { name: "pass"; value: "lights" }
+                                        parameters: Parameter { name: "winSize"; value: Qt.size(windowWidth * 0.5, windowHeight * 0.5) }
+                                    }
+                                }
+                            }
+*/
+                        }
+                    } // TechniqueFilter
+
+                    // Mesh selection boxes forward pass technique
+                    TechniqueFilter
+                    {
+                        parameters: [
+                            Parameter { name: "color"; value: forward.color },
+                            Parameter { name: "depth"; value: gBuffer.depth },
+                            Parameter { name: "winSize"; value: Qt.size(windowWidth, windowHeight) }
+                        ]
+
+                        RenderStateSet
+                        {
+                            // Add to FullScreen Quad
+                            renderStates: [
+                                BlendEquation { blendFunction: BlendEquation.Add },
+                                BlendEquationArguments
+                                {
+                                    sourceRgb: BlendEquationArguments.SourceAlpha
+                                    destinationRgb: BlendEquationArguments.DestinationColor
+                                }
+                            ]
+                            LayerFilter
+                            {
+                                layers: screenQuadLayer
+
+                                RenderPassFilter
+                                {
+                                    matchAny: FilterKey { name: "pass"; value: "forward" }
+                                    parameters: Parameter { name: "winSize"; value: Qt.size(windowWidth, windowHeight) }
+
+                                }
+                            }
+                        }
+                    } // TechniqueFilter
+
+                } // CameraSelector
+            } // RenderSurfaceSelector
+        } // Viewport
 }
