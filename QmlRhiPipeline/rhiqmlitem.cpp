@@ -1,7 +1,9 @@
  
 #include "rhiqmlitem.h"
-#include "cube.h"
 #include <QFile>
+
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
 
 QQuickRhiItemRenderer *RhiQmlItem::createRenderer()
 {
@@ -38,11 +40,65 @@ void RhiQmlItemRenderer::synchronize(QQuickRhiItem *rhiItem)
         m_int = item->lightIntensity();
 }
 
-static QShader getShader(const QString &name)
+QShader RhiQmlItemRenderer::getShader(const QString &name)
 {
     QFile f(name);
     return f.open(QIODevice::ReadOnly) ? QShader::fromSerialized(f.readAll()) : QShader();
 }
+
+void RhiQmlItemRenderer::processMesh(aiMesh *mesh)
+{
+    for (unsigned int i = 0; i < mesh->mNumVertices; i++)
+    {
+        m_positions.append(QVector3D(mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z));
+
+        // Ensure normals are loaded (Assimp should generate them if they are missing)
+        if (mesh->HasNormals())
+            m_normals.append(QVector3D(mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z));
+        else
+            m_normals.append(QVector3D(0.0f, 0.0f, 1.0f));  // Default normal if not present
+
+        // Load texture coordinates if they exist, otherwise default to (0,0)
+        m_texCoords.append(mesh->mTextureCoords[0]
+                            ? QVector2D(mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y)
+                            : QVector2D(0.0f, 0.0f));
+    }
+
+    for (unsigned int i = 0; i < mesh->mNumFaces; i++)
+    {
+        aiFace face = mesh->mFaces[i];
+        for (unsigned int j = 0; j < face.mNumIndices; j++)
+            m_indices.push_back(face.mIndices[j]);
+    }
+}
+
+void RhiQmlItemRenderer::processNode(aiNode *node)
+{
+    for (unsigned int i = 0; i < node->mNumMeshes; i++)
+    {
+        aiMesh *mesh = m_scene->mMeshes[node->mMeshes[i]];
+        processMesh(mesh);
+    }
+
+    for (unsigned int i = 0; i < node->mNumChildren; i++)
+        processNode(node->mChildren[i]);
+}
+
+void RhiQmlItemRenderer::load3DModel(const QString &path)
+{
+    Assimp::Importer importer;
+    m_scene = importer.ReadFile(path.toStdString(), aiProcess_Triangulate | aiProcess_FlipUVs | aiProcess_GenNormals);
+
+    if (!m_scene || m_scene->mFlags == AI_SCENE_FLAGS_INCOMPLETE || !m_scene->mRootNode)
+    {
+        qWarning() << "Error loading model: " << importer.GetErrorString();
+        return;
+    }
+
+    processNode(m_scene->mRootNode);
+    m_positions.append(m_normals);
+}
+
 
 void RhiQmlItemRenderer::initialize(QRhiCommandBuffer *cb)
 {
@@ -60,7 +116,10 @@ void RhiQmlItemRenderer::initialize(QRhiCommandBuffer *cb)
     //![2]
     if (!m_pipeline)
     {
-        m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, sizeof(cube)));
+        load3DModel("/home/massimo/projects/qmlplayground/QmlRhiPipeline/meshes/suzanne.obj");
+        qDebug() << "VERTICES LOADED" << (m_positions.length() / 2);
+
+        m_vbuf.reset(m_rhi->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, m_positions.length() * sizeof(QVector3D)));
         m_vbuf->create();
 
         m_mvpUniformBuffer.reset(m_rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, 3 * sizeof(QMatrix4x4)));
@@ -88,16 +147,16 @@ void RhiQmlItemRenderer::initialize(QRhiCommandBuffer *cb)
         // The cube is provided as non-interleaved sets of positions, UVs, normals.
         inputLayout.setBindings({
             { 3 * sizeof(float) },
-            { 2 * sizeof(float) },
+            //{ 2 * sizeof(float) },
             { 3 * sizeof(float) }
         });
         inputLayout.setAttributes({
             { 0, 0, QRhiVertexInputAttribute::Float3, 0 },
-            { 0, 1, QRhiVertexInputAttribute::Float2, 0 },
-            { 0, 2, QRhiVertexInputAttribute::Float3, 0 }
+            //{ 0, 1, QRhiVertexInputAttribute::Float2, 0 },
+            { 0, 1, QRhiVertexInputAttribute::Float3, 0 }
         });
         QRhiResourceUpdateBatch *resourceUpdates = m_rhi->nextResourceUpdateBatch();
-        resourceUpdates->uploadStaticBuffer(m_vbuf.get(), cube);
+        resourceUpdates->uploadStaticBuffer(m_vbuf.get(), m_positions.constData());
         cb->resourceUpdate(resourceUpdates);
 
         m_pipeline->setSampleCount(m_sampleCount);
@@ -122,7 +181,7 @@ void RhiQmlItemRenderer::render(QRhiCommandBuffer *cb)
 
     m_modelMatrix.setToIdentity();
     m_modelMatrix.rotate(m_rot, 0.0f, 1.0f, 0.0f);
-    m_modelMatrix.rotate(m_rot, 1.0f, 0.0f, 0.0f);
+    //m_modelMatrix.rotate(m_rot, 1.0f, 0.0f, 0.0f);
 
     //qDebug() << "RHI matrix" << m_projMatrix * m_viewMatrix * m_modelMatrix;
 
@@ -135,9 +194,9 @@ void RhiQmlItemRenderer::render(QRhiCommandBuffer *cb)
 
     // apply light: green color and medium intensity
     float lightData[7] = {
-        0.0, 1.0, 1.0,  // ambientColor
+        0.3, 0.3, 0.3,  // ambientColor
         0.5,            // ambientIntensity
-        0.0, 3.0, 0.0   // lightPosition
+        0.0, 4.0, 0.0   // lightPosition
     };
     resourceUpdates->updateDynamicBuffer(m_lightUniformBuffer.get(), 0, 7 * sizeof(float), &lightData);
 
@@ -150,12 +209,11 @@ void RhiQmlItemRenderer::render(QRhiCommandBuffer *cb)
 
     const QRhiCommandBuffer::VertexInput vbufBindings[] = {
         { m_vbuf.get(), 0 },
-        { m_vbuf.get(), quint32(36 * 3 * sizeof(float)) },
-        { m_vbuf.get(), quint32(36 * 5 * sizeof(float)) }
+        { m_vbuf.get(), quint32((m_positions.length() / 2) * 3 * sizeof(float)) }
     };
-    cb->setVertexInput(0, 3, vbufBindings);
+    cb->setVertexInput(0, 2, vbufBindings);
 
-    cb->draw(36);
+    cb->draw(m_positions.length() / 2);
 
     cb->endPass();
 }

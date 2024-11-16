@@ -5,12 +5,13 @@ project(qmlrhipipeline LANGUAGES CXX)
 set(CMAKE_BUILD_TYPE "Debug")
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick ShaderTools)
+find_package(assimp REQUIRED)
 
 qt_standard_project_setup()
 
 qt_add_executable(qmlrhipipeline WIN32 MACOSX_BUNDLE
     main.cpp
-    rhiqmlitem.cpp rhiqmlitem.h cube.h
+    rhiqmlitem.cpp rhiqmlitem.h
 )
 
 set_target_properties(qmlrhipipeline PROPERTIES
@@ -23,10 +24,11 @@ target_link_libraries(qmlrhipipeline PRIVATE
     Qt6::GuiPrivate
     Qt6::Qml
     Qt6::Quick
+    assimp
 )
 
 qt_add_qml_module(qmlrhipipeline
-    URI RhiUnderQML
+    URI RhiQmlItem
     QML_FILES
         main.qml
     RESOURCE_PREFIX /
@@ -36,10 +38,8 @@ qt_add_qml_module(qmlrhipipeline
 qt_add_shaders(qmlrhipipeline "qmlrhipipeline_shaders"
     PRECOMPILE
     OPTIMIZED
-    PREFIX
-        /
-    BASE
-        shaders
+    PREFIX /
+    BASE shaders
     FILES
         shaders/scene_pass.vert
         shaders/scene_pass.frag

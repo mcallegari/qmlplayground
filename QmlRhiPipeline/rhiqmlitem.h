@@ -4,6 +4,7 @@
 
 #include <QQuickRhiItem>
 #include <rhi/qrhi.h>
+#include <assimp/scene.h>
 
 class RhiQmlItemRenderer : public QQuickRhiItemRenderer
 {
@@ -11,6 +12,12 @@ public:
     void initialize(QRhiCommandBuffer *cb) override;
     void synchronize(QQuickRhiItem *item) override;
     void render(QRhiCommandBuffer *cb) override;
+
+protected:
+    QShader getShader(const QString &name);
+    void processMesh(aiMesh *mesh);
+    void processNode(aiNode *node);
+    void load3DModel(const QString &path);
 
 private:
     QRhi *m_rhi = nullptr;
@@ -25,6 +32,14 @@ private:
     QMatrix4x4 m_modelMatrix;
     QMatrix4x4 m_viewMatrix;
     QMatrix4x4 m_projMatrix;
+
+    QVector<QVector3D> m_positions;
+    QVector<QVector3D> m_normals;
+    QVector<QVector2D> m_texCoords;
+
+    std::vector<uint32_t> m_indices;
+
+    const aiScene *m_scene = nullptr;
 
     float m_rot = 0.0f;
     float m_int = 1.0f;
