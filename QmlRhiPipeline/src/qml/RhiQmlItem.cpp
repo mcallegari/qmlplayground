@@ -149,7 +149,7 @@ public:
         for (const Light &light : lights)
             m_staticLights.push_back(light);
 
-        const auto qmlModels = qmlItem->findChildren<ModelItem *>(QString(), Qt::FindDirectChildrenOnly);
+        const auto qmlModels = qmlItem->findChildren<ModelItem *>(QString(), Qt::FindChildrenRecursively);
         for (const ModelItem *modelItem : qmlModels)
         {
             if (modelItem->path().isEmpty())
@@ -238,7 +238,7 @@ public:
             m_qmlModels.push_back(record);
         }
 
-        const auto qmlCubes = qmlItem->findChildren<CubeItem *>(QString(), Qt::FindDirectChildrenOnly);
+        const auto qmlCubes = qmlItem->findChildren<CubeItem *>(QString(), Qt::FindChildrenRecursively);
         for (const CubeItem *cubeItem : qmlCubes)
         {
             bool found = false;
@@ -318,7 +318,7 @@ public:
         m_scene.lights().clear();
         m_scene.lights() = m_staticLights;
         QVector3D ambientTotal = qmlItem->ambientLight() * qmlItem->ambientIntensity();
-        const auto qmlLights = qmlItem->findChildren<LightItem *>(QString(), Qt::FindDirectChildrenOnly);
+        const auto qmlLights = qmlItem->findChildren<LightItem *>(QString(), Qt::FindChildrenRecursively);
         for (const LightItem *lightItem : qmlLights)
         {
             if (lightItem->type() == LightItem::Ambient)
@@ -331,7 +331,7 @@ public:
 
         const QSize size = qmlItem->effectiveColorBufferSize();
         const float aspect = size.height() > 0 ? float(size.width()) / float(size.height()) : 1.0f;
-        const CameraItem *cameraItem = qmlItem->findChild<CameraItem *>(QString(), Qt::FindDirectChildrenOnly);
+        const CameraItem *cameraItem = qmlItem->findChild<CameraItem *>(QString(), Qt::FindChildrenRecursively);
         if (cameraItem && !qmlItem->freeCameraEnabled())
         {
             m_scene.camera().setPosition(cameraItem->position());
@@ -341,11 +341,13 @@ public:
         else
         {
             m_scene.camera().setPosition(qmlItem->cameraPosition());
-            m_scene.camera().setPerspective(qmlItem->cameraFov(), aspect, 0.1f, 200.0f);
+            m_scene.camera().setPerspective(qmlItem->cameraFov(), aspect, 0.01f, 300.0f);
             m_scene.camera().lookAt(qmlItem->cameraTarget());
         }
         m_scene.setAmbientLight(ambientTotal);
         m_scene.setAmbientIntensity(1.0f);
+        m_scene.setSmokeAmount(qmlItem->smokeAmount());
+        m_scene.setBeamModel(static_cast<Scene::BeamModel>(qmlItem->beamModel()));
     }
 
     void render(QRhiCommandBuffer *cb) override
@@ -447,6 +449,19 @@ void RhiQmlItem::setCameraFov(float fov)
     update();
 }
 
+void RhiQmlItem::zoomAlongView(float delta)
+{
+    const QVector3D dir = (m_freeCameraEnabled ? forwardVector() : (m_cameraTarget - m_cameraPosition).normalized());
+    if (dir.isNull())
+        return;
+    m_cameraPosition += dir * delta;
+    if (!m_freeCameraEnabled)
+        m_cameraTarget += dir * delta;
+    emit cameraPositionChanged();
+    emit cameraTargetChanged();
+    update();
+}
+
 void RhiQmlItem::setAmbientLight(const QVector3D &ambient)
 {
     if (m_ambientLight == ambient)
@@ -462,6 +477,24 @@ void RhiQmlItem::setAmbientIntensity(float intensity)
         return;
     m_ambientIntensity = intensity;
     emit ambientIntensityChanged();
+    update();
+}
+
+void RhiQmlItem::setSmokeAmount(float amount)
+{
+    if (qFuzzyCompare(m_smokeAmount, amount))
+        return;
+    m_smokeAmount = amount;
+    emit smokeAmountChanged();
+    update();
+}
+
+void RhiQmlItem::setBeamModel(BeamModel mode)
+{
+    if (m_beamModel == mode)
+        return;
+    m_beamModel = mode;
+    emit beamModelChanged();
     update();
 }
 

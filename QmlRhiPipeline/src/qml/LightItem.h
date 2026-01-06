@@ -10,17 +10,6 @@
 class LightItem : public QObject
 {
     Q_OBJECT
-    Q_PROPERTY(Type type READ type WRITE setType NOTIFY typeChanged)
-    Q_PROPERTY(QVector3D position READ position WRITE setPosition NOTIFY positionChanged)
-    Q_PROPERTY(QVector3D direction READ direction WRITE setDirection NOTIFY directionChanged)
-    Q_PROPERTY(QVector3D color READ color WRITE setColor NOTIFY colorChanged)
-    Q_PROPERTY(float intensity READ intensity WRITE setIntensity NOTIFY intensityChanged)
-    Q_PROPERTY(float range READ range WRITE setRange NOTIFY rangeChanged)
-    Q_PROPERTY(float coneAngle READ coneAngle WRITE setConeAngle NOTIFY coneAngleChanged)
-    Q_PROPERTY(bool castShadows READ castShadows WRITE setCastShadows NOTIFY castShadowsChanged)
-    Q_PROPERTY(int qualitySteps READ qualitySteps WRITE setQualitySteps NOTIFY qualityStepsChanged)
-    Q_PROPERTY(QSizeF size READ size WRITE setSize NOTIFY sizeChanged)
-    Q_PROPERTY(QString goboPath READ goboPath WRITE setGoboPath NOTIFY goboPathChanged)
 
 public:
     enum Type
@@ -32,6 +21,26 @@ public:
         Area
     };
     Q_ENUM(Type)
+    enum BeamShapeType
+    {
+        ConeShape,
+        BeamShape
+    };
+    Q_ENUM(BeamShapeType)
+
+    Q_PROPERTY(Type type READ type WRITE setType NOTIFY typeChanged)
+    Q_PROPERTY(QVector3D position READ position WRITE setPosition NOTIFY positionChanged)
+    Q_PROPERTY(QVector3D direction READ direction WRITE setDirection NOTIFY directionChanged)
+    Q_PROPERTY(QVector3D color READ color WRITE setColor NOTIFY colorChanged)
+    Q_PROPERTY(float intensity READ intensity WRITE setIntensity NOTIFY intensityChanged)
+    Q_PROPERTY(float range READ range WRITE setRange NOTIFY rangeChanged)
+    Q_PROPERTY(float coneAngle READ coneAngle WRITE setConeAngle NOTIFY coneAngleChanged)
+    Q_PROPERTY(bool castShadows READ castShadows WRITE setCastShadows NOTIFY castShadowsChanged)
+    Q_PROPERTY(int qualitySteps READ qualitySteps WRITE setQualitySteps NOTIFY qualityStepsChanged)
+    Q_PROPERTY(QSizeF size READ size WRITE setSize NOTIFY sizeChanged)
+    Q_PROPERTY(QString goboPath READ goboPath WRITE setGoboPath NOTIFY goboPathChanged)
+    Q_PROPERTY(float beamRadius READ beamRadius WRITE setBeamRadius NOTIFY beamRadiusChanged)
+    Q_PROPERTY(BeamShapeType beamShape READ beamShape WRITE setBeamShape NOTIFY beamShapeChanged)
 
     explicit LightItem(QObject *parent = nullptr);
 
@@ -67,6 +76,10 @@ public:
 
     QString goboPath() const { return m_goboPath; }
     void setGoboPath(const QString &path);
+    float beamRadius() const { return m_beamRadius; }
+    void setBeamRadius(float radius);
+    BeamShapeType beamShape() const { return m_beamShape; }
+    void setBeamShape(BeamShapeType shape);
 
     Light toLight() const;
 
@@ -82,6 +95,8 @@ Q_SIGNALS:
     void qualityStepsChanged();
     void sizeChanged();
     void goboPathChanged();
+    void beamRadiusChanged();
+    void beamShapeChanged();
 
 private:
     void notifyParent();
@@ -97,4 +112,6 @@ private:
     int m_qualitySteps = 8;
     QSizeF m_size = QSizeF(1.0, 1.0);
     QString m_goboPath;
+    float m_beamRadius = 0.15f;
+    BeamShapeType m_beamShape = ConeShape;
 };

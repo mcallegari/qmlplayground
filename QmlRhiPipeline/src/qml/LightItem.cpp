@@ -107,6 +107,24 @@ void LightItem::setGoboPath(const QString &path)
     notifyParent();
 }
 
+void LightItem::setBeamRadius(float radius)
+{
+    if (qFuzzyCompare(m_beamRadius, radius))
+        return;
+    m_beamRadius = radius;
+    emit beamRadiusChanged();
+    notifyParent();
+}
+
+void LightItem::setBeamShape(BeamShapeType shape)
+{
+    if (m_beamShape == shape)
+        return;
+    m_beamShape = shape;
+    emit beamShapeChanged();
+    notifyParent();
+}
+
 Light LightItem::toLight() const
 {
     Light light;
@@ -140,6 +158,8 @@ Light LightItem::toLight() const
     light.qualitySteps = m_qualitySteps;
     light.areaSize = QVector2D(float(m_size.width()), float(m_size.height()));
     light.goboPath = m_goboPath;
+    light.beamRadius = m_beamRadius;
+    light.beamShape = static_cast<Light::BeamShapeType>(m_beamShape);
     return light;
 }
 

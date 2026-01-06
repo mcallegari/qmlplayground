@@ -49,7 +49,7 @@ private:
     QVector<QRhiBuffer *> m_spotShadowUbos;
     QRhiBuffer *m_modelUbo = nullptr;
     int m_shadowSize = 2048;
-    int m_spotShadowSize = 256;
+    int m_spotShadowSize = 512;
     int m_maxSpotShadows = kMaxSpotShadows;
     int m_spotShadowSlots = kMaxSpotShadows;
     bool m_reverseZ = false;

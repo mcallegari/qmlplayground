@@ -143,6 +143,8 @@ void PassLighting::execute(FrameContext &ctx)
     struct LightsData
     {
         QVector4D lightCount;
+        QVector4D lightParams;
+        QVector4D lightBeam[kMaxLights];
         QVector4D posRange[kMaxLights];
         QVector4D colorIntensity[kMaxLights];
         QVector4D dirInner[kMaxLights];
@@ -153,6 +155,10 @@ void PassLighting::execute(FrameContext &ctx)
     const int maxLights = qMin(kMaxLights, ctx.scene->lights().size());
     const QVector3D ambient = ctx.scene->ambientLight() * ctx.scene->ambientIntensity();
     lightData.lightCount = QVector4D(float(maxLights), ambient.x(), ambient.y(), ambient.z());
+    lightData.lightParams = QVector4D(ctx.scene->smokeAmount(),
+                                      float(static_cast<int>(ctx.scene->beamModel())),
+                                      0.0f,
+                                      0.0f);
     for (int i = 0; i < maxLights; ++i)
     {
         const Light &l = ctx.scene->lights()[i];
@@ -160,6 +166,7 @@ void PassLighting::execute(FrameContext &ctx)
         lightData.posRange[i] = QVector4D(l.position, l.range);
         lightData.colorIntensity[i] = QVector4D(l.color, l.intensity);
         lightData.dirInner[i] = QVector4D(dir, qCos(l.innerCone));
+        lightData.lightBeam[i] = QVector4D(l.beamRadius, float(l.beamShape), 0.0f, 0.0f);
         float extraZ = 0.0f;
         float extraW = 0.0f;
         if (l.type == Light::Type::Area)
@@ -460,6 +467,8 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     struct LightsDataSize
     {
         QVector4D lightCount;
+        QVector4D lightParams;
+        QVector4D lightBeam[kMaxLights];
         QVector4D posRange[kMaxLights];
         QVector4D colorIntensity[kMaxLights];
         QVector4D dirInner[kMaxLights];

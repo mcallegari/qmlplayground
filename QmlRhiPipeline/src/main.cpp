@@ -14,6 +14,7 @@ int main(int argc, char **argv)
     QGuiApplication app(argc, argv);
 
     qmlRegisterType<RhiQmlItem>("RhiQmlItem", 1, 0, "RhiQmlItem");
+    qmlRegisterUncreatableType<RhiQmlItem>("RhiQmlItem", 1, 0, "Scene", "Scene enums only");
     qmlRegisterType<LightItem>("RhiQmlItem", 1, 0, "Light");
     qmlRegisterType<CameraItem>("RhiQmlItem", 1, 0, "Camera");
     qmlRegisterType<ModelItem>("RhiQmlItem", 1, 0, "Model");

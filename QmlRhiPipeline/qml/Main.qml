@@ -15,8 +15,24 @@ Window {
         anchors.fill: parent
         focus: true
         freeCameraEnabled: true
+        smokeAmount: 0.8 // 0-1 range
+        beamModel: Scene.Physical // soft haze (fast fade), physically‑motivated (inverse‑square + exponential
         moveSpeed: 5.0
         lookSensitivity: 0.2
+
+        WheelHandler {
+            target: renderer
+            onWheel: function(wheel) {
+                var step = wheel.angleDelta.y / 120.0
+                var dx = renderer.cameraTarget.x - renderer.cameraPosition.x
+                var dy = renderer.cameraTarget.y - renderer.cameraPosition.y
+                var dz = renderer.cameraTarget.z - renderer.cameraPosition.z
+                var dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
+                dist = Math.max(dist, 0.5)
+                var factor = Math.pow(1.12, step)
+                renderer.zoomAlongView((factor - 1.0) * dist)
+            }
+        }
 
         Keys.onPressed: function(event) {
             var step = meshStep
@@ -50,8 +66,8 @@ Window {
             position: Qt.vector3d(0, 1, 5)
             target: Qt.vector3d(0, 0, 0)
             fov: 60
-            nearPlane: 0.1
-            farPlane: 200
+            nearPlane: 0.01
+            farPlane: 300
         }
 
         Light {
@@ -63,28 +79,46 @@ Window {
 
         Light {
             type: Light.Spotlight
+            position: Qt.vector3d(-1, 5, 0)
+            direction: Qt.vector3d(0, -1, 0)
+            color: Qt.vector3d(0.1, 0.1, 0.8)
+            intensity: 5.0
+            range: 100.0
+            coneAngle: 25.0
+            qualitySteps: 40
+            castShadows: true
+            beamShape: Light.ConeShape
+            beamRadius: 0.15
+            //goboPath: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00013.svg"
+        }
+
+        Light {
+            type: Light.Spotlight
             position: Qt.vector3d(0.5, 5, 0)
             direction: Qt.vector3d(0, -1, 0)
             color: Qt.vector3d(1, 0.1, 0.1)
             intensity: 3.0
-            range: 150.0
+            range: 100.0
             coneAngle: 25.0
             qualitySteps: 40
             castShadows: true
+            beamShape: Light.ConeShape
+            beamRadius: 0.2
             goboPath: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00024.svg"
         }
 
         Light {
             type: Light.Spotlight
-            position: Qt.vector3d(-1, 5, 0)
+            position: Qt.vector3d(3, 5, 0)
             direction: Qt.vector3d(0, -1, 0)
-            color: Qt.vector3d(0.1, 0.1, 0.8)
+            color: Qt.vector3d(0.1, 1, 0.1)
             intensity: 3.0
-            range: 150.0
-            coneAngle: 25.0
+            range: 100.0
+            coneAngle: 2
             qualitySteps: 40
             castShadows: true
-            goboPath: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00013.svg"
+            beamShape: Light.BeamShape
+            beamRadius: 0.3
         }
 
         Cube {
@@ -94,10 +128,11 @@ Window {
             isSelected: true
         }
 
+        // ground plane
         Cube {
             position: Qt.vector3d(0, -2.5, 0)
             rotationDegrees: Qt.vector3d(0, 0, 0)
-            scale: Qt.vector3d(8, 0.2, 8)
+            scale: Qt.vector3d(10, 0.2, 10)
             //isSelected: true
         }
 
@@ -110,5 +145,4 @@ Window {
         }
 
     }
-
 }

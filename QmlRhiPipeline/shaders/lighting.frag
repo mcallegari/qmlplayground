@@ -11,6 +11,8 @@ layout(binding = 2) uniform sampler2D gbuf2;
 
 layout(std140, binding = 3) uniform LightsUbo {
     vec4 lightCount;
+    vec4 lightParams;
+    vec4 lightBeam[MAX_LIGHTS];
     vec4 lightPosRange[MAX_LIGHTS];
     vec4 lightColorIntensity[MAX_LIGHTS];
     vec4 lightDirInner[MAX_LIGHTS];
@@ -362,6 +364,8 @@ void main()
         rayLen = 50.0;
     }
 
+    float smokeAmount = max(uLights.lightParams.x, 0.0);
+    int beamModel = int(uLights.lightParams.y + 0.5);
     vec3 beam = vec3(0.0);
     for (int i = 0; i < count; ++i) {
         vec4 other = uLights.lightOther[i];
@@ -370,32 +374,73 @@ void main()
             continue;
         if (other.w <= 0.0)
             continue;
+        if (smokeAmount <= 0.0)
+            continue;
         vec4 pr = uLights.lightPosRange[i];
         vec4 ci = uLights.lightColorIntensity[i];
         vec4 di = uLights.lightDirInner[i];
+        vec4 beamData = uLights.lightBeam[i];
+        float beamRadius = max(beamData.x, 0.001);
+        int beamShape = int(beamData.y + 0.5);
 
         vec3 axis = normalize(di.xyz);
-        float cosOuter = other.x;
-        float k2 = cosOuter * cosOuter;
-        vec3 w = uCamera.cameraPos.xyz - pr.xyz;
+        vec3 rayOrigin = uCamera.cameraPos.xyz - pr.xyz;
+        float tStart = 0.0;
+        float tEnd = 0.0;
         float dv = dot(rayDir, axis);
-        float dw = dot(w, axis);
-        float vv = dot(rayDir, rayDir);
-        float vw = dot(rayDir, w);
-        float ww = dot(w, w);
-        float a = dv * dv - k2 * vv;
-        float b = 2.0 * (dv * dw - k2 * vw);
-        float c = dw * dw - k2 * ww;
-        float disc = b * b - 4.0 * a * c;
-        if (abs(a) < 1e-6 || disc < 0.0)
-            continue;
-        float sqrtDisc = sqrt(disc);
-        float t0 = (-b - sqrtDisc) / (2.0 * a);
-        float t1 = (-b + sqrtDisc) / (2.0 * a);
-        float tEnter = min(t0, t1);
-        float tExit = max(t0, t1);
-        float tStart = max(tEnter, 0.0);
-        float tEnd = min(min(tExit, rayLen), pr.w);
+        float ow = dot(rayOrigin, axis);
+        if (abs(dv) < 1e-6) {
+            if (ow < 0.0 || ow > pr.w)
+                continue;
+        }
+        float tAx0 = (-ow) / max(dv, 1e-6);
+        float tAx1 = (pr.w - ow) / max(dv, 1e-6);
+        float tAxMin = min(tAx0, tAx1);
+        float tAxMax = max(tAx0, tAx1);
+        if (beamShape == 1) {
+            vec3 dPerp = rayDir - axis * dv;
+            vec3 oPerp = rayOrigin - axis * ow;
+            float a = dot(dPerp, dPerp);
+            float b = 2.0 * dot(dPerp, oPerp);
+            float c = dot(oPerp, oPerp) - beamRadius * beamRadius;
+            if (abs(a) < 1e-6) {
+                if (c > 0.0)
+                    continue;
+                tStart = max(0.0, tAxMin);
+                tEnd = min(rayLen, tAxMax);
+            } else {
+                float disc = b * b - 4.0 * a * c;
+                if (disc < 0.0)
+                    continue;
+                float sqrtDisc = sqrt(disc);
+                float t0 = (-b - sqrtDisc) / (2.0 * a);
+                float t1 = (-b + sqrtDisc) / (2.0 * a);
+                float tEnter = min(t0, t1);
+                float tExit = max(t0, t1);
+                tStart = max(max(tEnter, 0.0), tAxMin);
+                tEnd = min(min(tExit, rayLen), tAxMax);
+            }
+        } else {
+            float cosOuter = other.x;
+            float k2 = cosOuter * cosOuter;
+            float dw = ow;
+            float vv = dot(rayDir, rayDir);
+            float vw = dot(rayDir, rayOrigin);
+            float ww = dot(rayOrigin, rayOrigin);
+            float a = dv * dv - k2 * vv;
+            float b = 2.0 * (dv * dw - k2 * vw);
+            float c = dw * dw - k2 * ww;
+            float disc = b * b - 4.0 * a * c;
+            if (abs(a) < 1e-6 || disc < 0.0)
+                continue;
+            float sqrtDisc = sqrt(disc);
+            float t0 = (-b - sqrtDisc) / (2.0 * a);
+            float t1 = (-b + sqrtDisc) / (2.0 * a);
+            float tEnter = min(t0, t1);
+            float tExit = max(t0, t1);
+            tStart = max(max(tEnter, 0.0), tAxMin);
+            tEnd = min(min(tExit, rayLen), tAxMax);
+        }
         if (tEnd <= tStart)
             continue;
 
@@ -407,17 +452,42 @@ void main()
             vec3 p = uCamera.cameraPos.xyz + rayDir * t;
             vec3 toP = p - pr.xyz;
             float dist = length(toP);
-            if (dist > pr.w)
+            float axial = dot(toP, axis);
+            if (dist > pr.w || axial <= 0.0 || axial > pr.w)
                 continue;
             vec3 Ldir = dist > 0.0 ? toP / dist : vec3(0.0, 0.0, 0.0);
-            float cosTheta = dot(axis, Ldir);
             float cosInner = di.w;
-            float cone = smoothstep(cosOuter, cosInner, cosTheta);
+            float cone = 1.0;
+            float radial = length(cross(toP, axis));
+            if (beamShape == 1) {
+                cone = 1.0 - smoothstep(beamRadius * 0.98, beamRadius, radial);
+            } else {
+                float cosOuter = other.x;
+                float sinOuter = sqrt(max(1.0 - cosOuter * cosOuter, 0.0));
+                float sinInner = sqrt(max(1.0 - cosInner * cosInner, 0.0));
+                float tanOuter = sinOuter / max(cosOuter, 1e-4);
+                float tanInner = sinInner / max(cosInner, 1e-4);
+                float outerRadius = beamRadius + dist * tanOuter;
+                float innerRadius = beamRadius + dist * tanInner;
+                cone = 1.0 - smoothstep(innerRadius, outerRadius, radial);
+            }
             if (cone <= 0.001)
                 continue;
 
-            float attenuation = 1.0 - clamp(dist / pr.w, 0.0, 1.0);
-            float density = cone * attenuation;
+            float density = 0.0;
+            if (beamModel == 0) {
+                float attenuation = 1.0 - clamp(dist / pr.w, 0.0, 1.0);
+                float extinction = exp(-dist * 0.12);
+                density = cone * attenuation * extinction * 1.5;
+            } else {
+                float attenuation = 1.0 / max(dist * dist, 0.25);
+                float rangeFactor = 1.0 - clamp(dist / pr.w, 0.0, 1.0);
+                float extinction = exp(-dist * 0.02);
+                density = cone * attenuation * rangeFactor * extinction * 5.0;
+            }
+            if (beamShape == 1)
+                density *= 2.0;
+            density *= smokeAmount;
             if (spotParams.y > 0.5) {
                 vec2 texelSize = 1.0 / vec2(textureSize(spotShadowMap0, 0));
                 float shadow = sampleSpotShadowPcf(uShadow.spotLightViewProj[i],

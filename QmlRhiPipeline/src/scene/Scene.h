@@ -17,6 +17,11 @@ struct Light
         Spot,
         Area
     };
+    enum class BeamShapeType
+    {
+        ConeShape,
+        BeamShape
+    };
 
     Type type = Type::Point;
     QVector3D color = QVector3D(1.0f, 1.0f, 1.0f);
@@ -30,11 +35,18 @@ struct Light
     bool castShadows = true;
     int qualitySteps = 8;
     QString goboPath;
+    float beamRadius = 0.15f;
+    BeamShapeType beamShape = BeamShapeType::ConeShape;
 };
 
 class Scene
 {
 public:
+    enum class BeamModel
+    {
+        SoftHaze,
+        Physical
+    };
     Camera &camera()
     {
         return m_camera;
@@ -78,6 +90,22 @@ public:
     {
         m_ambientIntensity = intensity;
     }
+    float smokeAmount() const
+    {
+        return m_smokeAmount;
+    }
+    void setSmokeAmount(float amount)
+    {
+        m_smokeAmount = amount;
+    }
+    BeamModel beamModel() const
+    {
+        return m_beamModel;
+    }
+    void setBeamModel(BeamModel mode)
+    {
+        m_beamModel = mode;
+    }
 
 private:
     Camera m_camera;
@@ -85,4 +113,6 @@ private:
     QVector<Light> m_lights;
     QVector3D m_ambientLight = QVector3D(0.0f, 0.0f, 0.0f);
     float m_ambientIntensity = 1.0f;
+    float m_smokeAmount = 0.0f;
+    BeamModel m_beamModel = BeamModel::SoftHaze;
 };

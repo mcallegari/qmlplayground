@@ -17,11 +17,20 @@ class RhiQmlItem : public QQuickRhiItem
     Q_PROPERTY(float cameraFov READ cameraFov WRITE setCameraFov NOTIFY cameraFovChanged)
     Q_PROPERTY(QVector3D ambientLight READ ambientLight WRITE setAmbientLight NOTIFY ambientLightChanged)
     Q_PROPERTY(float ambientIntensity READ ambientIntensity WRITE setAmbientIntensity NOTIFY ambientIntensityChanged)
+    Q_PROPERTY(float smokeAmount READ smokeAmount WRITE setSmokeAmount NOTIFY smokeAmountChanged)
+    Q_PROPERTY(BeamModel beamModel READ beamModel WRITE setBeamModel NOTIFY beamModelChanged)
     Q_PROPERTY(bool freeCameraEnabled READ freeCameraEnabled WRITE setFreeCameraEnabled NOTIFY freeCameraEnabledChanged)
     Q_PROPERTY(float moveSpeed READ moveSpeed WRITE setMoveSpeed NOTIFY moveSpeedChanged)
     Q_PROPERTY(float lookSensitivity READ lookSensitivity WRITE setLookSensitivity NOTIFY lookSensitivityChanged)
 
 public:
+    enum BeamModel
+    {
+        SoftHaze,
+        Physical
+    };
+    Q_ENUM(BeamModel)
+
     explicit RhiQmlItem(QQuickItem *parent = nullptr);
 
     QVector3D cameraPosition() const { return m_cameraPosition; }
@@ -37,6 +46,10 @@ public:
     void setAmbientLight(const QVector3D &ambient);
     float ambientIntensity() const { return m_ambientIntensity; }
     void setAmbientIntensity(float intensity);
+    float smokeAmount() const { return m_smokeAmount; }
+    void setSmokeAmount(float amount);
+    BeamModel beamModel() const { return m_beamModel; }
+    void setBeamModel(BeamModel mode);
     bool freeCameraEnabled() const { return m_freeCameraEnabled; }
     void setFreeCameraEnabled(bool enabled);
     float moveSpeed() const { return m_moveSpeed; }
@@ -67,6 +80,7 @@ public:
                                   const QVector3D &color,
                                   float intensity,
                                   const QSizeF &size);
+    Q_INVOKABLE void zoomAlongView(float delta);
 
     struct PendingModel
     {
@@ -84,6 +98,8 @@ Q_SIGNALS:
     void cameraFovChanged();
     void ambientLightChanged();
     void ambientIntensityChanged();
+    void smokeAmountChanged();
+    void beamModelChanged();
     void freeCameraEnabledChanged();
     void moveSpeedChanged();
     void lookSensitivityChanged();
@@ -107,6 +123,8 @@ private:
     float m_cameraFov = 60.0f;
     QVector3D m_ambientLight = QVector3D(0.0f, 0.0f, 0.0f);
     float m_ambientIntensity = 1.0f;
+    float m_smokeAmount = 0.0f;
+    BeamModel m_beamModel = SoftHaze;
     bool m_freeCameraEnabled = false;
     float m_moveSpeed = 5.0f;
     float m_lookSensitivity = 0.2f;
