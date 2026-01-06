@@ -26,9 +26,12 @@ void DeferredRenderer::initialize(RhiContext *rhi, RenderTargetCache *targets, S
     m_graph.addPass(std::make_unique<PassGBuffer>());
     m_graph.addPass(std::make_unique<PassShadow>());
     m_graph.addPass(std::make_unique<PassLightCulling>());
-    if (skipLighting) {
+    if (skipLighting)
+    {
         qWarning() << "DeferredRenderer: skipping PassLighting (RHIPIPELINE_SKIP_LIGHTING)";
-    } else {
+    }
+    else
+    {
         m_graph.addPass(std::make_unique<PassLighting>());
     }
     m_graph.addPass(std::make_unique<PassPost>());

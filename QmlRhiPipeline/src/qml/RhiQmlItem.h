@@ -68,7 +68,8 @@ public:
                                   float intensity,
                                   const QSizeF &size);
 
-    struct PendingModel {
+    struct PendingModel
+    {
         QString path;
         QVector3D position;
         QVector3D rotationDegrees;

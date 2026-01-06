@@ -63,14 +63,28 @@ Window {
 
         Light {
             type: Light.Spotlight
-            position: Qt.vector3d(0, 5, 0)
+            position: Qt.vector3d(0.5, 5, 0)
             direction: Qt.vector3d(0, -1, 0)
-            color: Qt.vector3d(1, 1, 0.8)
+            color: Qt.vector3d(1, 0.1, 0.1)
             intensity: 3.0
             range: 150.0
             coneAngle: 25.0
             qualitySteps: 40
             castShadows: true
+            goboPath: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00024.svg"
+        }
+
+        Light {
+            type: Light.Spotlight
+            position: Qt.vector3d(-1, 5, 0)
+            direction: Qt.vector3d(0, -1, 0)
+            color: Qt.vector3d(0.1, 0.1, 0.8)
+            intensity: 3.0
+            range: 150.0
+            coneAngle: 25.0
+            qualitySteps: 40
+            castShadows: true
+            goboPath: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00013.svg"
         }
 
         Cube {
@@ -88,7 +102,7 @@ Window {
         }
 
         Model {
-            path: "C:/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
+            path: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
             position: Qt.vector3d(1.5, -1.2, 0)
             rotationDegrees: Qt.vector3d(0, -30, 0)
             scale: Qt.vector3d(1, 1, 1)

@@ -17,13 +17,15 @@ RenderTargetCache::GBufferTargets RenderTargetCache::getOrCreateGBuffer(const QS
     m_lastSamples = sampleCount;
 
     QRhiTexture::Format gbufFormat = QRhiTexture::RGBA16F;
-    if (!m_rhi->isTextureFormatSupported(gbufFormat, QRhiTexture::RenderTarget)) {
+    if (!m_rhi->isTextureFormatSupported(gbufFormat, QRhiTexture::RenderTarget))
+    {
         gbufFormat = QRhiTexture::RGBA8;
         qWarning() << "RenderTargetCache: RGBA16F not supported, falling back to RGBA8";
     }
 
     QRhiTexture::Format depthFormat = QRhiTexture::D24S8;
-    if (!m_rhi->isTextureFormatSupported(depthFormat, QRhiTexture::RenderTarget)) {
+    if (!m_rhi->isTextureFormatSupported(depthFormat, QRhiTexture::RenderTarget))
+    {
         depthFormat = QRhiTexture::D32F;
         qWarning() << "RenderTargetCache: D24S8 not supported, falling back to D32F";
     }
@@ -35,7 +37,8 @@ RenderTargetCache::GBufferTargets RenderTargetCache::getOrCreateGBuffer(const QS
     m_gbuffer.depth = m_rhi->newTexture(depthFormat, size, sampleCount, QRhiTexture::RenderTarget);
 
     if (!m_gbuffer.color0->create() || !m_gbuffer.color1->create() ||
-        !m_gbuffer.color2->create() || !m_gbuffer.depth->create()) {
+        !m_gbuffer.color2->create() || !m_gbuffer.depth->create())
+        {
         qWarning() << "RenderTargetCache: failed to create GBuffer textures";
         releaseAll();
         return m_gbuffer;
@@ -53,7 +56,8 @@ RenderTargetCache::GBufferTargets RenderTargetCache::getOrCreateGBuffer(const QS
     m_gbuffer.rpDesc = m_gbuffer.rt->newCompatibleRenderPassDescriptor();
     m_gbuffer.rt->setRenderPassDescriptor(m_gbuffer.rpDesc);
 
-    if (!m_gbuffer.rt->create()) {
+    if (!m_gbuffer.rt->create())
+    {
         qWarning() << "RenderTargetCache: failed to create GBuffer render target";
         releaseAll();
         return m_gbuffer;

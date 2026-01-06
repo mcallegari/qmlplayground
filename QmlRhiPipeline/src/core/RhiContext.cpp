@@ -13,7 +13,8 @@ bool RhiContext::initialize(QWindow *window)
     if (!m_window)
         return false;
 
-    struct BackendAttempt {
+    struct BackendAttempt
+    {
         QRhi::Implementation impl;
         const char *name;
     };
@@ -38,17 +39,23 @@ bool RhiContext::initialize(QWindow *window)
 
     QVector<BackendAttempt> attempts;
     const QByteArray backendOverride = qgetenv("RHIPIPELINE_BACKEND").toLower();
-    if (backendOverride == "vulkan") {
+    if (backendOverride == "vulkan")
+    {
         attempts.push_back({ QRhi::Vulkan, "Vulkan" });
-    } else if (backendOverride == "opengl" || backendOverride == "gles2") {
+    } else if (backendOverride == "opengl" || backendOverride == "gles2")
+    {
         attempts.push_back({ QRhi::OpenGLES2, "OpenGLES2" });
-    } else {
+    }
+    else
+    {
         for (const BackendAttempt &attempt : defaultAttempts)
             attempts.push_back(attempt);
     }
 
-    for (const BackendAttempt &attempt : attempts) {
-        if (attempt.impl == QRhi::Vulkan) {
+    for (const BackendAttempt &attempt : attempts)
+    {
+        if (attempt.impl == QRhi::Vulkan)
+        {
 #if QT_CONFIG(vulkan)
             m_window->setSurfaceType(QSurface::VulkanSurface);
             m_vkInstance.setApiVersion(QVersionNumber(1, 1, 0));
@@ -62,7 +69,8 @@ bool RhiContext::initialize(QWindow *window)
 #else
             continue;
 #endif
-        } else if (attempt.impl == QRhi::Metal) {
+        } else if (attempt.impl == QRhi::Metal)
+        {
 #if QT_CONFIG(metal)
             m_window->setSurfaceType(QSurface::MetalSurface);
             QRhiMetalInitParams metalParams;
@@ -70,7 +78,8 @@ bool RhiContext::initialize(QWindow *window)
 #else
             continue;
 #endif
-        } else if (attempt.impl == QRhi::D3D11) {
+        } else if (attempt.impl == QRhi::D3D11)
+        {
 #if defined(Q_OS_WIN)
             m_window->setSurfaceType(QSurface::RasterSurface);
             QRhiD3D11InitParams d3dParams;
@@ -78,10 +87,12 @@ bool RhiContext::initialize(QWindow *window)
 #else
             continue;
 #endif
-        } else if (attempt.impl == QRhi::OpenGLES2) {
+        } else if (attempt.impl == QRhi::OpenGLES2)
+        {
 #if QT_CONFIG(opengl)
             m_window->setSurfaceType(QSurface::OpenGLSurface);
-            if (!m_glContext) {
+            if (!m_glContext)
+            {
                 m_glContext = new QOpenGLContext();
                 QSurfaceFormat fmt;
                 fmt.setMajorVersion(3);
@@ -89,7 +100,8 @@ bool RhiContext::initialize(QWindow *window)
                 fmt.setProfile(QSurfaceFormat::CoreProfile);
                 m_glContext->setFormat(fmt);
                 m_window->setFormat(fmt);
-                if (!m_glContext->create()) {
+                if (!m_glContext->create())
+                {
                     delete m_glContext;
                     m_glContext = nullptr;
                     continue;
@@ -159,7 +171,8 @@ void RhiContext::shutdown()
     m_swapChainRpDesc = nullptr;
     delete m_swapChain;
     m_swapChain = nullptr;
-    if (m_ownsRhi) {
+    if (m_ownsRhi)
+    {
         delete m_rhi;
         m_rhi = nullptr;
     }
@@ -177,7 +190,8 @@ void RhiContext::beginFrame()
         return;
 
     const QRhi::FrameOpResult res = m_rhi->beginFrame(m_swapChain);
-    if (res != QRhi::FrameOpSuccess) {
+    if (res != QRhi::FrameOpSuccess)
+    {
         qWarning() << "RhiContext: beginFrame failed with" << res;
         return;
     }

@@ -75,11 +75,13 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
         return false;
 
     std::function<void(aiNode *, const QMatrix4x4 &)> visitNode;
-    visitNode = [&](aiNode *node, const QMatrix4x4 &parent) {
+    visitNode = [&](aiNode *node, const QMatrix4x4 &parent)
+    {
         const QMatrix4x4 local = toQtMatrix(node->mTransformation);
         const QMatrix4x4 world = parent * local;
 
-        for (unsigned int i = 0; i < node->mNumMeshes; ++i) {
+        for (unsigned int i = 0; i < node->mNumMeshes; ++i)
+        {
             const aiMesh *m = ai->mMeshes[node->mMeshes[i]];
             Mesh mesh;
             mesh.modelMatrix = world;
@@ -89,7 +91,8 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
             QVector3D maxV;
             bool haveBounds = false;
 
-            for (unsigned int v = 0; v < m->mNumVertices; ++v) {
+            for (unsigned int v = 0; v < m->mNumVertices; ++v)
+            {
                 const aiVector3D pos = m->mVertices[v];
                 const aiVector3D nrm = m->HasNormals() ? m->mNormals[v] : aiVector3D(0.0f, 1.0f, 0.0f);
                 const aiVector3D uv = m->HasTextureCoords(0) ? m->mTextureCoords[0][v] : aiVector3D(0.0f, 0.0f, 0.0f);
@@ -104,11 +107,14 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
                 vert.v = uv.y;
                 mesh.vertices.push_back(vert);
 
-                if (!haveBounds) {
+                if (!haveBounds)
+                {
                     minV = QVector3D(pos.x, pos.y, pos.z);
                     maxV = minV;
                     haveBounds = true;
-                } else {
+                }
+                else
+                {
                     minV.setX(qMin(minV.x(), pos.x));
                     minV.setY(qMin(minV.y(), pos.y));
                     minV.setZ(qMin(minV.z(), pos.z));
@@ -117,13 +123,15 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
                     maxV.setZ(qMax(maxV.z(), pos.z));
                 }
             }
-            if (haveBounds) {
+            if (haveBounds)
+            {
                 mesh.boundsMin = minV;
                 mesh.boundsMax = maxV;
                 mesh.boundsValid = true;
             }
 
-            for (unsigned int f = 0; f < m->mNumFaces; ++f) {
+            for (unsigned int f = 0; f < m->mNumFaces; ++f)
+            {
                 const aiFace &face = m->mFaces[f];
                 if (face.mNumIndices != 3)
                     continue;
@@ -132,7 +140,8 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
                 mesh.indices.push_back(face.mIndices[2]);
             }
 
-            if (m->mMaterialIndex < ai->mNumMaterials) {
+            if (m->mMaterialIndex < ai->mNumMaterials)
+            {
                 const aiMaterial *mat = ai->mMaterials[m->mMaterialIndex];
                 readMaterial(mat, mesh.material);
             }

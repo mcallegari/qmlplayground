@@ -110,7 +110,8 @@ void LightItem::setGoboPath(const QString &path)
 Light LightItem::toLight() const
 {
     Light light;
-    switch (m_type) {
+    switch (m_type)
+    {
     case Ambient:
         light.type = Light::Type::Point;
         break;

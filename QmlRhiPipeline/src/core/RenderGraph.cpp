@@ -13,7 +13,8 @@ void RenderGraph::clear()
 
 void RenderGraph::run(FrameContext &ctx)
 {
-    if (!ctx.rhi) {
+    if (!ctx.rhi)
+    {
         qWarning() << "RenderGraph: missing RHI context";
         return;
     }

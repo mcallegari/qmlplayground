@@ -11,7 +11,8 @@ class RenderTargetCache
 public:
     explicit RenderTargetCache(QRhi *rhi);
 
-    struct GBufferTargets {
+    struct GBufferTargets
+    {
         QRhiTexture *color0 = nullptr;
         QRhiTexture *color1 = nullptr;
         QRhiTexture *color2 = nullptr;

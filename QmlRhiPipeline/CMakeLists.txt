@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui ShaderTools GuiPrivate Quick Qml)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui ShaderTools GuiPrivate Quick Qml Svg)
 find_package(assimp QUIET)
 
 add_executable(qmlrhipipeline
@@ -36,7 +36,7 @@ add_executable(qmlrhipipeline
 
 target_include_directories(qmlrhipipeline PRIVATE src)
 
-target_link_libraries(qmlrhipipeline PRIVATE Qt6::Core Qt6::Gui Qt6::GuiPrivate)
+target_link_libraries(qmlrhipipeline PRIVATE Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::Svg)
 target_link_libraries(qmlrhipipeline PRIVATE Qt6::ShaderTools Qt6::Quick Qt6::Qml)
 
 if(assimp_FOUND)

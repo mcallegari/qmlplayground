@@ -33,7 +33,8 @@ void PassGBuffer::execute(FrameContext &ctx)
     const QColor clear0(0, 0, 0, 0);
     const QRhiDepthStencilClearValue dsClear(1.0f, 0);
 
-    struct CameraData {
+    struct CameraData
+    {
         float viewProj[16];
         QVector4D cameraPos;
     } camData;
@@ -45,17 +46,21 @@ void PassGBuffer::execute(FrameContext &ctx)
     camData.cameraPos = QVector4D(ctx.scene->camera().position(), 1.0f);
 
     static bool s_dumped = false;
-    if (!s_dumped) {
+    if (!s_dumped)
+    {
         //qDebug() << "PassGBuffer: mesh count" << ctx.scene->meshes().size();
         int idx = 0;
-        for (const Mesh &mesh : ctx.scene->meshes()) {
+        for (const Mesh &mesh : ctx.scene->meshes())
+        {
             const QVector3D modelPos = mesh.modelMatrix.column(3).toVector3D();
             QVector3D localMin;
             QVector3D localMax;
-            if (!mesh.vertices.isEmpty()) {
+            if (!mesh.vertices.isEmpty())
+            {
                 localMin = QVector3D(mesh.vertices[0].px, mesh.vertices[0].py, mesh.vertices[0].pz);
                 localMax = localMin;
-                for (const Vertex &v : mesh.vertices) {
+                for (const Vertex &v : mesh.vertices)
+                {
                     localMin.setX(qMin(localMin.x(), v.px));
                     localMin.setY(qMin(localMin.y(), v.py));
                     localMin.setZ(qMin(localMin.z(), v.pz));
@@ -73,12 +78,14 @@ void PassGBuffer::execute(FrameContext &ctx)
         s_dumped = true;
     }
 
-    struct ModelData {
+    struct ModelData
+    {
         float model[16];
         float normalMatrix[16];
     };
 
-    struct MaterialData {
+    struct MaterialData
+    {
         QVector4D baseColorMetal;
         QVector4D roughnessOcclusion;
         QVector4D emissive;
@@ -87,7 +94,8 @@ void PassGBuffer::execute(FrameContext &ctx)
     QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
     u->updateDynamicBuffer(m_cameraUbo, 0, sizeof(CameraData), &camData);
 
-    for (Mesh &mesh : ctx.scene->meshes()) {
+    for (Mesh &mesh : ctx.scene->meshes())
+    {
         ensureMeshBuffers(ctx, mesh, u);
         if (!mesh.modelUbo || !mesh.materialUbo)
             continue;
@@ -114,7 +122,8 @@ void PassGBuffer::execute(FrameContext &ctx)
     cb->setGraphicsPipeline(m_pipeline);
     cb->setViewport(QRhiViewport(0, 0, m_gbuffer.rt->pixelSize().width(), m_gbuffer.rt->pixelSize().height()));
 
-    for (Mesh &mesh : ctx.scene->meshes()) {
+    for (Mesh &mesh : ctx.scene->meshes())
+    {
         if (!mesh.vertexBuffer || !mesh.indexBuffer || mesh.indexCount == 0)
             continue;
         if (!mesh.srb)
@@ -143,8 +152,10 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
     delete m_modelUbo;
     delete m_materialUbo;
 
-    if (ctx.scene) {
-        for (Mesh &mesh : ctx.scene->meshes()) {
+    if (ctx.scene)
+    {
+        for (Mesh &mesh : ctx.scene->meshes())
+        {
             delete mesh.srb;
             mesh.srb = nullptr;
         }
@@ -192,7 +203,8 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
     pipeline->setShaderResourceBindings(m_srb);
     pipeline->setRenderPassDescriptor(m_gbuffer.rpDesc);
 
-    if (!pipeline->create()) {
+    if (!pipeline->create())
+    {
         qWarning() << "PassGBuffer: failed to create pipeline";
         return;
     }
@@ -206,7 +218,8 @@ void PassGBuffer::ensureMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceU
     if (mesh.vertices.isEmpty() || mesh.indices.isEmpty())
         return;
 
-    if (!mesh.vertexBuffer || !mesh.indexBuffer) {
+    if (!mesh.vertexBuffer || !mesh.indexBuffer)
+    {
         mesh.vertexBuffer = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, mesh.vertices.size() * sizeof(Vertex));
         mesh.indexBuffer = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::IndexBuffer, mesh.indices.size() * sizeof(quint32));
         if (!mesh.vertexBuffer->create() || !mesh.indexBuffer->create())
@@ -219,18 +232,21 @@ void PassGBuffer::ensureMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceU
     if (mesh.indexCount == 0 && !mesh.indices.isEmpty())
         mesh.indexCount = mesh.indices.size();
 
-    if (!mesh.modelUbo) {
+    if (!mesh.modelUbo)
+    {
         const quint32 mat4Size = 16 * sizeof(float);
         mesh.modelUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, mat4Size * 2);
         if (!mesh.modelUbo->create())
             return;
     }
-    if (!mesh.materialUbo) {
+    if (!mesh.materialUbo)
+    {
         mesh.materialUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D) * 3);
         if (!mesh.materialUbo->create())
             return;
     }
-    if (!mesh.srb) {
+    if (!mesh.srb)
+    {
         mesh.srb = ctx.rhi->rhi()->newShaderResourceBindings();
         mesh.srb->setBindings({
             QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, m_cameraUbo),

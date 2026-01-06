@@ -10,7 +10,8 @@
 
 struct Light
 {
-    enum class Type {
+    enum class Type
+    {
         Directional,
         Point,
         Spot,
@@ -34,19 +35,49 @@ struct Light
 class Scene
 {
 public:
-    Camera &camera() { return m_camera; }
-    const Camera &camera() const { return m_camera; }
+    Camera &camera()
+    {
+        return m_camera;
+    }
+    const Camera &camera() const
+    {
+        return m_camera;
+    }
 
-    QVector<Mesh> &meshes() { return m_meshes; }
-    const QVector<Mesh> &meshes() const { return m_meshes; }
+    QVector<Mesh> &meshes()
+    {
+        return m_meshes;
+    }
+    const QVector<Mesh> &meshes() const
+    {
+        return m_meshes;
+    }
 
-    QVector<Light> &lights() { return m_lights; }
-    const QVector<Light> &lights() const { return m_lights; }
+    QVector<Light> &lights()
+    {
+        return m_lights;
+    }
+    const QVector<Light> &lights() const
+    {
+        return m_lights;
+    }
 
-    QVector3D ambientLight() const { return m_ambientLight; }
-    void setAmbientLight(const QVector3D &ambient) { m_ambientLight = ambient; }
-    float ambientIntensity() const { return m_ambientIntensity; }
-    void setAmbientIntensity(float intensity) { m_ambientIntensity = intensity; }
+    QVector3D ambientLight() const
+    {
+        return m_ambientLight;
+    }
+    void setAmbientLight(const QVector3D &ambient)
+    {
+        m_ambientLight = ambient;
+    }
+    float ambientIntensity() const
+    {
+        return m_ambientIntensity;
+    }
+    void setAmbientIntensity(float intensity)
+    {
+        m_ambientIntensity = intensity;
+    }
 
 private:
     Camera m_camera;

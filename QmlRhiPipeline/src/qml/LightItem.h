@@ -23,7 +23,8 @@ class LightItem : public QObject
     Q_PROPERTY(QString goboPath READ goboPath WRITE setGoboPath NOTIFY goboPathChanged)
 
 public:
-    enum Type {
+    enum Type
+    {
         Ambient,
         Directional,
         Point,

@@ -1,12 +1,10 @@
 #version 450
 
 #define MAX_LIGHTS 32
+#define MAX_SPOT_SHADOWS 8
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 outColor;
 
-layout(std140, binding = 12) uniform FlipUbo {
-    vec4 flip;
-} uFlip;
 layout(binding = 0) uniform sampler2D gbuf0;
 layout(binding = 1) uniform sampler2D gbuf1;
 layout(binding = 2) uniform sampler2D gbuf2;
@@ -38,9 +36,19 @@ layout(std140, binding = 5) uniform ShadowUbo {
 layout(binding = 6) uniform sampler2D shadowMap0;
 layout(binding = 7) uniform sampler2D shadowMap1;
 layout(binding = 8) uniform sampler2D shadowMap2;
-layout(binding = 9) uniform sampler2D spotShadowMap;
-layout(binding = 10) uniform sampler2D gbufDepth;
-layout(binding = 11) uniform sampler2DArray spotGoboMap;
+layout(binding = 9) uniform sampler2D spotShadowMap0;
+layout(binding = 10) uniform sampler2D spotShadowMap1;
+layout(binding = 11) uniform sampler2D spotShadowMap2;
+layout(binding = 12) uniform sampler2D spotShadowMap3;
+layout(binding = 13) uniform sampler2D spotShadowMap4;
+layout(binding = 14) uniform sampler2D spotShadowMap5;
+layout(binding = 15) uniform sampler2D spotShadowMap6;
+layout(binding = 16) uniform sampler2D spotShadowMap7;
+layout(binding = 17) uniform sampler2D gbufDepth;
+layout(binding = 18) uniform sampler2DArray spotGoboMap;
+layout(std140, binding = 19) uniform FlipUbo {
+    vec4 flip;
+} uFlip;
 
 vec3 decodeNormal(vec3 enc)
 {
@@ -60,6 +68,27 @@ vec3 reconstructWorldPosWithDepth(vec2 uvNdc, float depth)
 vec2 shadowUv(vec2 uv)
 {
     return uv;
+}
+
+float sampleSpotShadowDepth(vec2 uv, int slot)
+{
+    if (slot == 0)
+        return texture(spotShadowMap0, uv).r;
+    if (slot == 1)
+        return texture(spotShadowMap1, uv).r;
+    if (slot == 2)
+        return texture(spotShadowMap2, uv).r;
+    if (slot == 3)
+        return texture(spotShadowMap3, uv).r;
+    if (slot == 4)
+        return texture(spotShadowMap4, uv).r;
+    if (slot == 5)
+        return texture(spotShadowMap5, uv).r;
+    if (slot == 6)
+        return texture(spotShadowMap6, uv).r;
+    if (slot == 7)
+        return texture(spotShadowMap7, uv).r;
+    return 0.0;
 }
 
 bool spotProject(mat4 viewProj, vec3 worldPos, out vec2 uv)
@@ -101,7 +130,8 @@ float sampleShadowMap(int idx, vec3 worldPos, float bias)
     return depth - bias <= shadowDepth ? 1.0 : 0.0;
 }
 
-float sampleSpotShadow(mat4 viewProj, vec3 worldPos, vec3 lightPos, float nearPlane, float farPlane, float bias)
+float sampleSpotShadow(mat4 viewProj, vec3 worldPos, vec3 lightPos,
+                       float nearPlane, float farPlane, float bias, int slot)
 {
     vec4 clip = viewProj * vec4(worldPos, 1.0);
     vec3 ndc = clip.xyz / clip.w;
@@ -110,12 +140,12 @@ float sampleSpotShadow(mat4 viewProj, vec3 worldPos, vec3 lightPos, float nearPl
     float depth = (dist - nearPlane) / max(farPlane - nearPlane, 1e-6);
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
         return 1.0;
-    float shadowDepth = texture(spotShadowMap, uv).r;
+    float shadowDepth = sampleSpotShadowDepth(uv, slot);
     return depth - bias <= shadowDepth ? 1.0 : 0.0;
 }
 
 float sampleSpotShadowPcf(mat4 viewProj, vec3 worldPos, vec3 lightPos,
-                          float nearPlane, float farPlane, float bias, float texel)
+                          float nearPlane, float farPlane, float bias, float texel, int slot)
 {
     vec4 clip = viewProj * vec4(worldPos, 1.0);
     vec3 ndc = clip.xyz / clip.w;
@@ -128,7 +158,7 @@ float sampleSpotShadowPcf(mat4 viewProj, vec3 worldPos, vec3 lightPos,
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
             vec2 offset = vec2(float(x), float(y)) * texel;
-            float shadowDepth = textureLod(spotShadowMap, uv + offset, 0.0).r;
+            float shadowDepth = sampleSpotShadowDepth(uv + offset, slot);
             sum += depth - bias <= shadowDepth ? 1.0 : 0.0;
         }
     }
@@ -264,13 +294,15 @@ void main()
         if (type == 2) {
             vec4 spotParams = uShadow.spotShadowParams[i];
             if (spotParams.y > 0.5) {
+                int slot = int(spotParams.x + 0.5);
                 float bias = 0.001;
                 shadow = sampleSpotShadow(uShadow.spotLightViewProj[i],
                                           worldPos,
                                           pr.xyz,
                                           spotParams.z,
                                           spotParams.w,
-                                          bias);
+                                          bias,
+                                          slot);
             }
         }
         Lo += (diffuse + specular) * radiance * NdotL * shadow;
@@ -387,14 +419,15 @@ void main()
             float attenuation = 1.0 - clamp(dist / pr.w, 0.0, 1.0);
             float density = cone * attenuation;
             if (spotParams.y > 0.5) {
-                vec2 texelSize = 1.0 / vec2(textureSize(spotShadowMap, 0));
+                vec2 texelSize = 1.0 / vec2(textureSize(spotShadowMap0, 0));
                 float shadow = sampleSpotShadowPcf(uShadow.spotLightViewProj[i],
                                                    p,
                                                    pr.xyz,
                                                    spotParams.z,
                                                    spotParams.w,
                                                    0.001,
-                                                   max(texelSize.x, texelSize.y));
+                                                   max(texelSize.x, texelSize.y),
+                                                   int(spotParams.x + 0.5));
                 if (shadow <= 0.0)
                     continue;
             }

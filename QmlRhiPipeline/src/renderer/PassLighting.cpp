@@ -1,9 +1,13 @@
 #include "renderer/PassLighting.h"
 
 #include <QtCore/QDebug>
+#include <QtCore/QCoreApplication>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
+#include <QtCore/QUrl>
 #include <QtGui/QImage>
+#include <QtGui/QPainter>
+#include <QtSvg/QSvgRenderer>
 #include <rhi/qrhi.h>
 #include <vector>
 #include <cstring>
@@ -14,18 +18,77 @@
 #include "core/ShaderManager.h"
 #include "scene/Scene.h"
 
+static QString resolveGoboPath(const QString &path)
+{
+    if (path.isEmpty())
+        return QString();
+    const QUrl url(path);
+    if (url.isValid() && url.isLocalFile())
+        return url.toLocalFile();
+    const QFileInfo info(path);
+    if (info.isAbsolute())
+        return path;
+    const QString appDir = QCoreApplication::applicationDirPath();
+    const QString candidateCwd = QDir::current().filePath(path);
+    if (QFileInfo::exists(candidateCwd))
+        return candidateCwd;
+    const QString candidateApp = QDir(appDir).filePath(path);
+    if (QFileInfo::exists(candidateApp))
+        return candidateApp;
+    const QString candidateAppParent = QDir(appDir).filePath(QStringLiteral("../") + path);
+    if (QFileInfo::exists(candidateAppParent))
+        return candidateAppParent;
+    return candidateCwd;
+}
+
 static QImage loadGoboImage(const QString &path, const QSize &size)
 {
     QImage image;
-    if (!path.isEmpty()) {
-        QFileInfo info(path);
-        const QString resolved = info.isRelative() ? QDir::current().filePath(path) : path;
-        image = QImage(resolved);
+    if (!path.isEmpty())
+    {
+        const QString resolved = resolveGoboPath(path);
+        if (resolved.endsWith(QLatin1String(".svg"), Qt::CaseInsensitive))
+        {
+            QSvgRenderer renderer(resolved);
+            if (renderer.isValid())
+            {
+                const int w = size.width();
+                const int h = size.height();
+                image = QImage(size, QImage::Format_RGBA8888);
+                // Match existing gobo pipeline: black background + circular mask + inset render.
+                image.fill(Qt::black);
+                QPainter painter(&image);
+                painter.setBrush(QBrush(Qt::white));
+                painter.setPen(Qt::NoPen);
+                // Mask out a 2px border to avoid edge bleed from the rasterized SVG.
+                painter.drawEllipse(2, 2, qMax(0, w - 4), qMax(0, h - 4));
+                // Render SVG 1px inset to keep it inside the mask.
+                renderer.render(&painter, QRect(1, 1, qMax(0, w - 2), qMax(0, h - 2)));
+            }
+        }
+        else
+        {
+            const int w = size.width();
+            const int h = size.height();
+            image = QImage(size, QImage::Format_RGBA8888);
+            // Apply the same mask/inset behavior for non-SVG gobos.
+            image.fill(Qt::black);
+            QPainter painter(&image);
+            painter.setBrush(QBrush(Qt::white));
+            painter.setPen(Qt::NoPen);
+            painter.drawEllipse(2, 2, qMax(0, w - 4), qMax(0, h - 4));
+            QIcon goboFile(resolved);
+            painter.drawPixmap(1, 1, qMax(0, w - 2), qMax(0, h - 2),
+                               goboFile.pixmap(QSize(qMax(0, w - 2), qMax(0, h - 2))));
+        }
     }
-    if (image.isNull()) {
+    if (image.isNull())
+    {
         image = QImage(size, QImage::Format_RGBA8888);
-        image.fill(Qt::white);
-    } else {
+        image.fill(Qt::black);
+    }
+    else
+    {
         image = image.convertToFormat(QImage::Format_RGBA8888);
         if (image.size() != size)
             image = image.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
@@ -35,7 +98,8 @@ static QImage loadGoboImage(const QString &path, const QSize &size)
 
 void PassLighting::prepare(FrameContext &ctx)
 {
-    if (qEnvironmentVariableIsSet("RHIPIPELINE_SKIP_LIGHTING")) {
+    if (qEnvironmentVariableIsSet("RHIPIPELINE_SKIP_LIGHTING"))
+    {
         qWarning() << "PassLighting: skipping lighting (RHIPIPELINE_SKIP_LIGHTING)";
         return;
     }
@@ -49,7 +113,8 @@ void PassLighting::updateGoboTextures(FrameContext &ctx, QRhiResourceUpdateBatch
     QVector<QRhiTextureUploadEntry> entries;
     entries.reserve(kMaxLights);
     const auto &lights = ctx.scene->lights();
-    for (int i = 0; i < kMaxLights; ++i) {
+    for (int i = 0; i < kMaxLights; ++i)
+    {
         const QString path = i < lights.size() ? lights[i].goboPath : QString();
         if (!m_spotGoboPaths[i].isNull() && path == m_spotGoboPaths[i])
             continue;
@@ -75,7 +140,8 @@ void PassLighting::execute(FrameContext &ctx)
     if (!cb || !rt)
         return;
 
-    struct LightsData {
+    struct LightsData
+    {
         QVector4D lightCount;
         QVector4D posRange[kMaxLights];
         QVector4D colorIntensity[kMaxLights];
@@ -87,7 +153,8 @@ void PassLighting::execute(FrameContext &ctx)
     const int maxLights = qMin(kMaxLights, ctx.scene->lights().size());
     const QVector3D ambient = ctx.scene->ambientLight() * ctx.scene->ambientIntensity();
     lightData.lightCount = QVector4D(float(maxLights), ambient.x(), ambient.y(), ambient.z());
-    for (int i = 0; i < maxLights; ++i) {
+    for (int i = 0; i < maxLights; ++i)
+    {
         const Light &l = ctx.scene->lights()[i];
         const QVector3D dir = l.direction.normalized();
         lightData.posRange[i] = QVector4D(l.position, l.range);
@@ -95,10 +162,12 @@ void PassLighting::execute(FrameContext &ctx)
         lightData.dirInner[i] = QVector4D(dir, qCos(l.innerCone));
         float extraZ = 0.0f;
         float extraW = 0.0f;
-        if (l.type == Light::Type::Area) {
+        if (l.type == Light::Type::Area)
+        {
             extraZ = l.areaSize.x();
             extraW = l.areaSize.y();
-        } else if (l.type == Light::Type::Spot) {
+        } else if (l.type == Light::Type::Spot)
+        {
             extraZ = l.goboPath.isEmpty() ? -1.0f : float(i);
             extraW = float(l.qualitySteps);
         }
@@ -108,7 +177,8 @@ void PassLighting::execute(FrameContext &ctx)
                                        extraW);
     }
 
-    struct CameraData {
+    struct CameraData
+    {
         float view[16];
         float invViewProj[16];
         QVector4D cameraPos;
@@ -122,7 +192,8 @@ void PassLighting::execute(FrameContext &ctx)
     std::memcpy(camData.invViewProj, invViewProj.constData(), sizeof(camData.invViewProj));
     camData.cameraPos = QVector4D(ctx.scene->camera().position(), 1.0f);
 
-    struct ShadowDataGpu {
+    struct ShadowDataGpu
+    {
         float lightViewProj[3][16];
         float splits[4];
         float dirLightDir[4];
@@ -132,7 +203,8 @@ void PassLighting::execute(FrameContext &ctx)
         float shadowDepthParams[4];
     } shadowData;
     memset(&shadowData, 0, sizeof(ShadowDataGpu));
-    if (ctx.shadows && ctx.shadows->cascadeCount > 0) {
+    if (ctx.shadows && ctx.shadows->cascadeCount > 0)
+    {
         for (int i = 0; i < ctx.shadows->cascadeCount; ++i)
             std::memcpy(shadowData.lightViewProj[i], ctx.shadows->lightViewProj[i].constData(), sizeof(shadowData.lightViewProj[i]));
         shadowData.splits[0] = ctx.shadows->splits.x();
@@ -148,8 +220,10 @@ void PassLighting::execute(FrameContext &ctx)
         shadowData.dirLightColorIntensity[2] = ctx.shadows->dirLightColorIntensity.z();
         shadowData.dirLightColorIntensity[3] = ctx.shadows->dirLightColorIntensity.w();
     }
-    if (ctx.shadows) {
-        for (int i = 0; i < kMaxLights; ++i) {
+    if (ctx.shadows)
+    {
+        for (int i = 0; i < kMaxLights; ++i)
+        {
             std::memcpy(shadowData.spotLightViewProj[i], ctx.shadows->spotLightViewProj[i].constData(), sizeof(shadowData.spotLightViewProj[i]));
             shadowData.spotShadowParams[i][0] = ctx.shadows->spotShadowParams[i].x();
             shadowData.spotShadowParams[i][1] = ctx.shadows->spotShadowParams[i].y();
@@ -187,8 +261,10 @@ void PassLighting::execute(FrameContext &ctx)
     cb->draw(3);
 
     bool anySelected = false;
-    for (const Mesh &mesh : ctx.scene->meshes()) {
-        if (mesh.selected) {
+    for (const Mesh &mesh : ctx.scene->meshes())
+    {
+        if (mesh.selected)
+        {
             anySelected = true;
             break;
         }
@@ -197,8 +273,10 @@ void PassLighting::execute(FrameContext &ctx)
     if (anySelected)
         ensureSelectionBoxesPipeline(ctx, rt);
 
-    if (anySelected && m_selectionPipeline && m_selectionSrb && m_selectionVbuf) {
-        struct SelectionVertex {
+    if (anySelected && m_selectionPipeline && m_selectionSrb && m_selectionVbuf)
+    {
+        struct SelectionVertex
+        {
             float x;
             float y;
             float z;
@@ -216,7 +294,8 @@ void PassLighting::execute(FrameContext &ctx)
             {0, 4}, {1, 5}, {2, 6}, {3, 7}
         };
 
-        for (const Mesh &mesh : meshes) {
+        for (const Mesh &mesh : meshes)
+        {
             if (!mesh.selected)
                 continue;
             if (mesh.vertices.isEmpty())
@@ -224,10 +303,12 @@ void PassLighting::execute(FrameContext &ctx)
 
             QVector3D minV = mesh.boundsMin;
             QVector3D maxV = mesh.boundsMax;
-            if (!mesh.boundsValid) {
+            if (!mesh.boundsValid)
+            {
                 minV = QVector3D(mesh.vertices[0].px, mesh.vertices[0].py, mesh.vertices[0].pz);
                 maxV = minV;
-                for (const Vertex &v : mesh.vertices) {
+                for (const Vertex &v : mesh.vertices)
+                {
                     minV.setX(qMin(minV.x(), v.px));
                     minV.setY(qMin(minV.y(), v.py));
                     minV.setZ(qMin(minV.z(), v.pz));
@@ -250,7 +331,8 @@ void PassLighting::execute(FrameContext &ctx)
 
             const QMatrix4x4 model = mesh.modelMatrix;
 
-            for (const auto &edge : edges) {
+            for (const auto &edge : edges)
+            {
                 if (maxVertices > 0 && int(vertices.size() + 2) > maxVertices)
                     break;
                 const QVector3D a = (model * QVector4D(corners[edge[0]], 1.0f)).toVector3D();
@@ -260,7 +342,8 @@ void PassLighting::execute(FrameContext &ctx)
             }
         }
 
-        if (!vertices.empty()) {
+        if (!vertices.empty())
+        {
             QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
             const QMatrix4x4 viewProj = ctx.rhi->rhi()->clipSpaceCorrMatrix()
                     * ctx.scene->camera().projectionMatrix()
@@ -303,12 +386,24 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
                              gbuf.color2 != m_gbufColor2 ||
                              gbuf.depth != m_gbufDepth;
     const bool reverseZ = ctx.rhi->rhi()->clipSpaceCorrMatrix()(2, 2) < 0.0f;
-    const QRhiTexture *spotShadow = ctx.shadows ? ctx.shadows->spotShadowMap : nullptr;
-    const bool spotChanged = spotShadow != m_spotShadowMap;
+    bool spotChanged = false;
+    if (ctx.shadows)
+    {
+        for (int i = 0; i < kMaxSpotShadows; ++i)
+        {
+            if (m_spotShadowMaps[i] != ctx.shadows->spotShadowMaps[i])
+            {
+                spotChanged = true;
+                break;
+            }
+        }
+    }
 
     bool shadowsChanged = false;
-    if (ctx.shadows) {
-        for (int i = 0; i < 3; ++i) {
+    if (ctx.shadows)
+    {
+        for (int i = 0; i < 3; ++i)
+        {
             if (m_shadowMapRefs[i] != ctx.shadows->shadowMaps[i])
                 shadowsChanged = true;
         }
@@ -362,7 +457,8 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
         return;
     m_reverseZ = reverseZ;
 
-    struct LightsDataSize {
+    struct LightsDataSize
+    {
         QVector4D lightCount;
         QVector4D posRange[kMaxLights];
         QVector4D colorIntensity[kMaxLights];
@@ -370,14 +466,16 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
         QVector4D other[kMaxLights];
     };
     m_lightsUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(LightsDataSize));
-    struct CameraDataSize {
+    struct CameraDataSize
+    {
         float view[16];
         float invViewProj[16];
         QVector4D cameraPos;
     };
     m_cameraUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer,
                                             sizeof(CameraDataSize));
-    struct ShadowDataGpu {
+    struct ShadowDataGpu
+    {
         float lightViewProj[3][16];
         float splits[4];
         float dirLightDir[4];
@@ -391,7 +489,8 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     if (!m_lightsUbo->create() || !m_cameraUbo->create() || !m_shadowUbo->create() || !m_flipUbo->create())
         return;
 
-    if (!gbuf.color0 || !gbuf.color1 || !gbuf.color2) {
+    if (!gbuf.color0 || !gbuf.color1 || !gbuf.color2)
+    {
         qWarning() << "PassLighting: missing GBuffer textures";
         return;
     }
@@ -401,8 +500,18 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     m_gbufDepth = gbuf.depth;
     m_gbufWorldPosFloat = (gbuf.colorFormat == QRhiTexture::RGBA16F
                            || gbuf.colorFormat == QRhiTexture::RGBA32F);
-    m_spotShadowMap = spotShadow;
-    if (!m_spotGoboMap) {
+    if (ctx.shadows)
+    {
+        for (int i = 0; i < kMaxSpotShadows; ++i)
+            m_spotShadowMaps[i] = ctx.shadows->spotShadowMaps[i];
+    }
+    else
+    {
+        for (int i = 0; i < kMaxSpotShadows; ++i)
+            m_spotShadowMaps[i] = nullptr;
+    }
+    if (!m_spotGoboMap)
+    {
         m_spotGoboMap = ctx.rhi->rhi()->newTextureArray(QRhiTexture::RGBA8, kMaxLights, m_spotGoboSize);
         if (!m_spotGoboMap->create())
             return;
@@ -416,37 +525,41 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
         QRhiShaderResourceBinding::uniformBuffer(3, QRhiShaderResourceBinding::FragmentStage, m_lightsUbo),
         QRhiShaderResourceBinding::uniformBuffer(4, QRhiShaderResourceBinding::FragmentStage, m_cameraUbo),
         QRhiShaderResourceBinding::uniformBuffer(5, QRhiShaderResourceBinding::FragmentStage, m_shadowUbo),
-        QRhiShaderResourceBinding::uniformBuffer(12, QRhiShaderResourceBinding::FragmentStage, m_flipUbo)
+        QRhiShaderResourceBinding::uniformBuffer(19, QRhiShaderResourceBinding::FragmentStage, m_flipUbo)
     };
 
-    if (ctx.shadows && ctx.shadows->shadowMaps[0]) {
+    if (ctx.shadows && ctx.shadows->shadowMaps[0])
+    {
         bindings.push_back(QRhiShaderResourceBinding::sampledTexture(6, QRhiShaderResourceBinding::FragmentStage, ctx.shadows->shadowMaps[0], m_shadowSampler));
         bindings.push_back(QRhiShaderResourceBinding::sampledTexture(7, QRhiShaderResourceBinding::FragmentStage, ctx.shadows->shadowMaps[1], m_shadowSampler));
         bindings.push_back(QRhiShaderResourceBinding::sampledTexture(8, QRhiShaderResourceBinding::FragmentStage, ctx.shadows->shadowMaps[2], m_shadowSampler));
         for (int i = 0; i < 3; ++i)
             m_shadowMapRefs[i] = ctx.shadows->shadowMaps[i];
-    } else {
+    }
+    else
+    {
         bindings.push_back(QRhiShaderResourceBinding::sampledTexture(6, QRhiShaderResourceBinding::FragmentStage, gbuf.depth, m_shadowSampler));
         bindings.push_back(QRhiShaderResourceBinding::sampledTexture(7, QRhiShaderResourceBinding::FragmentStage, gbuf.depth, m_shadowSampler));
         bindings.push_back(QRhiShaderResourceBinding::sampledTexture(8, QRhiShaderResourceBinding::FragmentStage, gbuf.depth, m_shadowSampler));
         for (int i = 0; i < 3; ++i)
             m_shadowMapRefs[i] = nullptr;
     }
-    if (spotShadow) {
-        bindings.push_back(QRhiShaderResourceBinding::sampledTexture(9, QRhiShaderResourceBinding::FragmentStage,
-                                                                     ctx.shadows->spotShadowMap,
-                                                                     m_spotShadowSampler));
-    } else {
-        bindings.push_back(QRhiShaderResourceBinding::sampledTexture(9, QRhiShaderResourceBinding::FragmentStage,
-                                                                     gbuf.depth, m_spotShadowSampler));
+    for (int i = 0; i < kMaxSpotShadows; ++i)
+    {
+        QRhiTexture *spotTex = ctx.shadows ? ctx.shadows->spotShadowMaps[i] : nullptr;
+        if (!spotTex)
+            spotTex = gbuf.depth;
+        bindings.push_back(QRhiShaderResourceBinding::sampledTexture(9 + i, QRhiShaderResourceBinding::FragmentStage,
+                                                                     spotTex, m_spotShadowSampler));
     }
-    bindings.push_back(QRhiShaderResourceBinding::sampledTexture(10, QRhiShaderResourceBinding::FragmentStage,
+    bindings.push_back(QRhiShaderResourceBinding::sampledTexture(17, QRhiShaderResourceBinding::FragmentStage,
                                                                  gbuf.depth, m_sampler));
-    bindings.push_back(QRhiShaderResourceBinding::sampledTexture(11, QRhiShaderResourceBinding::FragmentStage,
+    bindings.push_back(QRhiShaderResourceBinding::sampledTexture(18, QRhiShaderResourceBinding::FragmentStage,
                                                                  m_spotGoboMap, m_goboSampler));
 
     m_srb->setBindings(bindings.begin(), bindings.end());
-    if (!m_srb->create()) {
+    if (!m_srb->create())
+    {
         qWarning() << "PassLighting: failed to create SRB";
         return;
     }
@@ -464,7 +577,8 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     pipeline->setShaderResourceBindings(m_srb);
     pipeline->setRenderPassDescriptor(rt->renderPassDescriptor());
 
-    if (!pipeline->create()) {
+    if (!pipeline->create())
+    {
         qWarning() << "PassLighting: failed to create pipeline";
         return;
     }
@@ -543,4 +657,3 @@ void PassLighting::ensureSelectionBoxesPipeline(FrameContext &ctx, QRhiRenderTar
     m_selectionPipeline = pipeline;
     m_selectionRpDesc = rt->renderPassDescriptor();
 }
-

@@ -25,6 +25,7 @@ struct Mesh
     QRhiBuffer *materialUbo = nullptr;
     QRhiShaderResourceBindings *srb = nullptr;
     QRhiShaderResourceBindings *shadowSrb = nullptr;
+    QVector<QRhiShaderResourceBindings *> spotShadowSrbs;
     int indexCount = 0;
     QMatrix4x4 baseModelMatrix;
     QMatrix4x4 modelMatrix;

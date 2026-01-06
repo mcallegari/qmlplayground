@@ -20,7 +20,8 @@
 #include "qml/ModelItem.h"
 #include "qml/CubeItem.h"
 
-namespace {
+namespace
+{
 
 Mesh createUnitCubeMesh()
 {
@@ -84,7 +85,8 @@ public:
         if (m_initialized)
             return;
 
-        if (!m_rhiContext.initializeExternal(rhi())) {
+        if (!m_rhiContext.initializeExternal(rhi()))
+        {
             qWarning() << "RhiQmlItemRenderer: failed to initialize external RHI context";
             return;
         }
@@ -101,18 +103,22 @@ public:
 
         QVector<RhiQmlItem::PendingModel> models;
         qmlItem->takePendingModels(models);
-        for (const auto &entry : models) {
+        for (const auto &entry : models)
+        {
             const int beforeCount = m_scene.meshes().size();
-            if (!m_loader.loadModel(entry.path, m_scene, true)) {
+            if (!m_loader.loadModel(entry.path, m_scene, true))
+            {
                 qWarning() << "RhiQmlItemRenderer: failed to load model" << entry.path;
                 continue;
             }
-            for (int i = beforeCount; i < m_scene.meshes().size(); ++i) {
+            for (int i = beforeCount; i < m_scene.meshes().size(); ++i)
+            {
                 Mesh &mesh = m_scene.meshes()[i];
                 mesh.baseModelMatrix = mesh.modelMatrix;
                 QMatrix4x4 transform;
                 transform.translate(entry.position);
-                if (!entry.rotationDegrees.isNull()) {
+                if (!entry.rotationDegrees.isNull())
+                {
                     const QQuaternion rot = QQuaternion::fromEulerAngles(entry.rotationDegrees);
                     transform.rotate(rot);
                 }
@@ -120,10 +126,12 @@ public:
                     transform.scale(entry.scale);
                 mesh.modelMatrix = transform * mesh.baseModelMatrix;
                 mesh.userOffset = entry.position;
-                if (!mesh.vertices.isEmpty()) {
+                if (!mesh.vertices.isEmpty())
+                {
                     QVector3D minV(mesh.vertices[0].px, mesh.vertices[0].py, mesh.vertices[0].pz);
                     QVector3D maxV = minV;
-                    for (const Vertex &v : mesh.vertices) {
+                    for (const Vertex &v : mesh.vertices)
+                    {
                         minV.setX(qMin(minV.x(), v.px));
                         minV.setY(qMin(minV.y(), v.py));
                         minV.setZ(qMin(minV.z(), v.pz));
@@ -142,40 +150,47 @@ public:
             m_staticLights.push_back(light);
 
         const auto qmlModels = qmlItem->findChildren<ModelItem *>(QString(), Qt::FindDirectChildrenOnly);
-        for (const ModelItem *modelItem : qmlModels) {
+        for (const ModelItem *modelItem : qmlModels)
+        {
             if (modelItem->path().isEmpty())
                 continue;
             bool found = false;
-            for (ModelRecord &record : m_qmlModels) {
+            for (ModelRecord &record : m_qmlModels)
+            {
                 if (record.item != modelItem)
                     continue;
                 found = true;
-                if (record.path != modelItem->path()) {
+                if (record.path != modelItem->path())
+                {
                     qWarning() << "RhiQmlItemRenderer: model path changed after load for" << modelItem->path();
                     break;
                 }
                 if (record.position != modelItem->position()
                         || record.rotationDegrees != modelItem->rotationDegrees()
-                        || record.scale != modelItem->scale()) {
+                        || record.scale != modelItem->scale())
+                        {
                     record.position = modelItem->position();
                     record.rotationDegrees = modelItem->rotationDegrees();
                     record.scale = modelItem->scale();
                     QMatrix4x4 transform;
                     transform.translate(record.position);
-                    if (!record.rotationDegrees.isNull()) {
+                    if (!record.rotationDegrees.isNull())
+                    {
                         const QQuaternion rot = QQuaternion::fromEulerAngles(record.rotationDegrees);
                         transform.rotate(rot);
                     }
                     if (record.scale != QVector3D(1.0f, 1.0f, 1.0f))
                         transform.scale(record.scale);
-                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i) {
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                    {
                         Mesh &mesh = m_scene.meshes()[i];
                         mesh.modelMatrix = transform * mesh.baseModelMatrix;
                         mesh.userOffset = record.position;
                     }
                 }
                 const bool selected = modelItem->isSelected();
-                if (record.selected != selected) {
+                if (record.selected != selected)
+                {
                     record.selected = selected;
                     for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
                         m_scene.meshes()[i].selected = selected;
@@ -186,7 +201,8 @@ public:
                 continue;
 
             const int beforeCount = m_scene.meshes().size();
-            if (!m_loader.loadModel(modelItem->path(), m_scene, true)) {
+            if (!m_loader.loadModel(modelItem->path(), m_scene, true))
+            {
                 qWarning() << "RhiQmlItemRenderer: failed to load model" << modelItem->path();
                 continue;
             }
@@ -203,14 +219,16 @@ public:
 
             QMatrix4x4 transform;
             transform.translate(record.position);
-            if (!record.rotationDegrees.isNull()) {
+            if (!record.rotationDegrees.isNull())
+            {
                 const QQuaternion rot = QQuaternion::fromEulerAngles(record.rotationDegrees);
                 transform.rotate(rot);
             }
             if (record.scale != QVector3D(1.0f, 1.0f, 1.0f))
                 transform.scale(record.scale);
 
-            for (int i = beforeCount; i < m_scene.meshes().size(); ++i) {
+            for (int i = beforeCount; i < m_scene.meshes().size(); ++i)
+            {
                 Mesh &mesh = m_scene.meshes()[i];
                 mesh.baseModelMatrix = mesh.modelMatrix;
                 mesh.modelMatrix = transform * mesh.baseModelMatrix;
@@ -221,34 +239,40 @@ public:
         }
 
         const auto qmlCubes = qmlItem->findChildren<CubeItem *>(QString(), Qt::FindDirectChildrenOnly);
-        for (const CubeItem *cubeItem : qmlCubes) {
+        for (const CubeItem *cubeItem : qmlCubes)
+        {
             bool found = false;
-            for (CubeRecord &record : m_qmlCubes) {
+            for (CubeRecord &record : m_qmlCubes)
+            {
                 if (record.item != cubeItem)
                     continue;
                 found = true;
                 if (record.position != cubeItem->position()
                         || record.rotationDegrees != cubeItem->rotationDegrees()
-                        || record.scale != cubeItem->scale()) {
+                        || record.scale != cubeItem->scale())
+                        {
                     record.position = cubeItem->position();
                     record.rotationDegrees = cubeItem->rotationDegrees();
                     record.scale = cubeItem->scale();
                     QMatrix4x4 transform;
                     transform.translate(record.position);
-                    if (!record.rotationDegrees.isNull()) {
+                    if (!record.rotationDegrees.isNull())
+                    {
                         const QQuaternion rot = QQuaternion::fromEulerAngles(record.rotationDegrees);
                         transform.rotate(rot);
                     }
                     if (record.scale != QVector3D(1.0f, 1.0f, 1.0f))
                         transform.scale(record.scale);
-                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i) {
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                    {
                         Mesh &mesh = m_scene.meshes()[i];
                         mesh.modelMatrix = transform * mesh.baseModelMatrix;
                         mesh.userOffset = record.position;
                     }
                 }
                 const bool selected = cubeItem->isSelected();
-                if (record.selected != selected) {
+                if (record.selected != selected)
+                {
                     record.selected = selected;
                     for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
                         m_scene.meshes()[i].selected = selected;
@@ -272,14 +296,16 @@ public:
 
             QMatrix4x4 transform;
             transform.translate(record.position);
-            if (!record.rotationDegrees.isNull()) {
+            if (!record.rotationDegrees.isNull())
+            {
                 const QQuaternion rot = QQuaternion::fromEulerAngles(record.rotationDegrees);
                 transform.rotate(rot);
             }
             if (record.scale != QVector3D(1.0f, 1.0f, 1.0f))
                 transform.scale(record.scale);
 
-            for (int i = beforeCount; i < m_scene.meshes().size(); ++i) {
+            for (int i = beforeCount; i < m_scene.meshes().size(); ++i)
+            {
                 Mesh &mesh = m_scene.meshes()[i];
                 mesh.baseModelMatrix = mesh.modelMatrix;
                 mesh.modelMatrix = transform * mesh.baseModelMatrix;
@@ -293,8 +319,10 @@ public:
         m_scene.lights() = m_staticLights;
         QVector3D ambientTotal = qmlItem->ambientLight() * qmlItem->ambientIntensity();
         const auto qmlLights = qmlItem->findChildren<LightItem *>(QString(), Qt::FindDirectChildrenOnly);
-        for (const LightItem *lightItem : qmlLights) {
-            if (lightItem->type() == LightItem::Ambient) {
+        for (const LightItem *lightItem : qmlLights)
+        {
+            if (lightItem->type() == LightItem::Ambient)
+            {
                 ambientTotal += lightItem->color() * lightItem->intensity();
                 continue;
             }
@@ -304,11 +332,14 @@ public:
         const QSize size = qmlItem->effectiveColorBufferSize();
         const float aspect = size.height() > 0 ? float(size.width()) / float(size.height()) : 1.0f;
         const CameraItem *cameraItem = qmlItem->findChild<CameraItem *>(QString(), Qt::FindDirectChildrenOnly);
-        if (cameraItem && !qmlItem->freeCameraEnabled()) {
+        if (cameraItem && !qmlItem->freeCameraEnabled())
+        {
             m_scene.camera().setPosition(cameraItem->position());
             m_scene.camera().setPerspective(cameraItem->fov(), aspect, cameraItem->nearPlane(), cameraItem->farPlane());
             m_scene.camera().lookAt(cameraItem->target());
-        } else {
+        }
+        else
+        {
             m_scene.camera().setPosition(qmlItem->cameraPosition());
             m_scene.camera().setPerspective(qmlItem->cameraFov(), aspect, 0.1f, 200.0f);
             m_scene.camera().lookAt(qmlItem->cameraTarget());
@@ -322,7 +353,8 @@ public:
         if (!m_initialized)
             return;
         QRhiRenderTarget *rt = renderTarget();
-        if (!cb || !rt) {
+        if (!cb || !rt)
+        {
             qWarning() << "RhiQmlItemRenderer: missing cb/rt" << cb << rt;
             return;
         }
@@ -341,7 +373,8 @@ private:
     Scene m_scene;
     AssimpLoader m_loader;
     QVector<Light> m_staticLights;
-    struct ModelRecord {
+    struct ModelRecord
+    {
         const ModelItem *item = nullptr;
         QString path;
         QVector3D position;
@@ -352,7 +385,8 @@ private:
         int meshCount = 0;
     };
     QVector<ModelRecord> m_qmlModels;
-    struct CubeRecord {
+    struct CubeRecord
+    {
         const CubeItem *item = nullptr;
         QVector3D position;
         QVector3D rotationDegrees;
@@ -373,7 +407,8 @@ RhiQmlItem::RhiQmlItem(QQuickItem *parent)
     setFlag(ItemIsFocusScope, true);
     m_cameraTick = new QTimer(this);
     m_cameraTick->setInterval(16);
-    connect(m_cameraTick, &QTimer::timeout, this, [this]() {
+    connect(m_cameraTick, &QTimer::timeout, this, [this]()
+    {
         if (!m_freeCameraEnabled)
             return;
         if (!m_cameraTimer.isValid())
@@ -435,12 +470,15 @@ void RhiQmlItem::setFreeCameraEnabled(bool enabled)
     if (m_freeCameraEnabled == enabled)
         return;
     m_freeCameraEnabled = enabled;
-    if (m_freeCameraEnabled) {
+    if (m_freeCameraEnabled)
+    {
         const QVector3D dir = (m_cameraTarget - m_cameraPosition).normalized();
         updateYawPitchFromDirection(dir);
         m_cameraTimer.restart();
         m_cameraTick->start();
-    } else {
+    }
+    else
+    {
         m_cameraTick->stop();
     }
     emit freeCameraEnabledChanged();
@@ -465,7 +503,8 @@ void RhiQmlItem::setLookSensitivity(float sensitivity)
 
 void RhiQmlItem::keyPressEvent(QKeyEvent *event)
 {
-    if (!m_freeCameraEnabled) {
+    if (!m_freeCameraEnabled)
+    {
         QQuickRhiItem::keyPressEvent(event);
         return;
     }
@@ -483,7 +522,8 @@ void RhiQmlItem::keyPressEvent(QKeyEvent *event)
 
 void RhiQmlItem::keyReleaseEvent(QKeyEvent *event)
 {
-    if (!m_freeCameraEnabled) {
+    if (!m_freeCameraEnabled)
+    {
         QQuickRhiItem::keyReleaseEvent(event);
         return;
     }
@@ -501,7 +541,8 @@ void RhiQmlItem::keyReleaseEvent(QKeyEvent *event)
 
 void RhiQmlItem::mousePressEvent(QMouseEvent *event)
 {
-    if (!m_freeCameraEnabled || event->button() != Qt::RightButton) {
+    if (!m_freeCameraEnabled || event->button() != Qt::RightButton)
+    {
         QQuickRhiItem::mousePressEvent(event);
         return;
     }
@@ -512,7 +553,8 @@ void RhiQmlItem::mousePressEvent(QMouseEvent *event)
 
 void RhiQmlItem::mouseReleaseEvent(QMouseEvent *event)
 {
-    if (!m_freeCameraEnabled || event->button() != Qt::RightButton) {
+    if (!m_freeCameraEnabled || event->button() != Qt::RightButton)
+    {
         QQuickRhiItem::mouseReleaseEvent(event);
         return;
     }
@@ -522,7 +564,8 @@ void RhiQmlItem::mouseReleaseEvent(QMouseEvent *event)
 
 void RhiQmlItem::mouseMoveEvent(QMouseEvent *event)
 {
-    if (!m_freeCameraEnabled || !m_looking) {
+    if (!m_freeCameraEnabled || !m_looking)
+    {
         QQuickRhiItem::mouseMoveEvent(event);
         return;
     }
@@ -555,7 +598,8 @@ void RhiQmlItem::updateFreeCamera(float dtSeconds)
     if (m_moveRight)
         pos += right * speed;
 
-    if (pos != m_cameraPosition) {
+    if (pos != m_cameraPosition)
+    {
         m_cameraPosition = pos;
         m_cameraTarget = m_cameraPosition + fwd;
         emit cameraPositionChanged();

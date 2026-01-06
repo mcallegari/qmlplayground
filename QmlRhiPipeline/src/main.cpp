@@ -25,7 +25,8 @@ int main(int argc, char **argv)
         url = QUrl::fromLocalFile(QString::fromLocal8Bit(argv[1]));
 
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreated,
-                     &app, [url](QObject *obj, const QUrl &objUrl) {
+                     &app, [url](QObject *obj, const QUrl &objUrl)
+                     {
                          if (!obj && objUrl == url)
                              QCoreApplication::exit(-1);
                      }, Qt::QueuedConnection);

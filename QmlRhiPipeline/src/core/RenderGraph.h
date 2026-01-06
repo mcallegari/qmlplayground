@@ -12,6 +12,7 @@ class Scene;
 class QRhiTexture;
 
 inline constexpr int kMaxLights = 32;
+inline constexpr int kMaxSpotShadows = 8;
 
 struct FrameContext
 {
@@ -33,7 +34,7 @@ struct ShadowData
     QMatrix4x4 spotLightViewProj[kMaxLights];
     QVector4D spotShadowParams[kMaxLights];
     int spotShadowCount = 0;
-    QRhiTexture *spotShadowMap = nullptr;
+    QRhiTexture *spotShadowMaps[kMaxSpotShadows] = { nullptr };
     QVector4D shadowDepthParams;
 };
 
