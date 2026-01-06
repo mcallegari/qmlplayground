@@ -1,0 +1,48 @@
+#pragma once
+
+#include <QtCore/QObject>
+#include <QtGui/QVector3D>
+
+class CameraItem : public QObject
+{
+    Q_OBJECT
+    Q_PROPERTY(QVector3D position READ position WRITE setPosition NOTIFY positionChanged)
+    Q_PROPERTY(QVector3D target READ target WRITE setTarget NOTIFY targetChanged)
+    Q_PROPERTY(float fov READ fov WRITE setFov NOTIFY fovChanged)
+    Q_PROPERTY(float nearPlane READ nearPlane WRITE setNearPlane NOTIFY nearPlaneChanged)
+    Q_PROPERTY(float farPlane READ farPlane WRITE setFarPlane NOTIFY farPlaneChanged)
+
+public:
+    explicit CameraItem(QObject *parent = nullptr);
+
+    QVector3D position() const { return m_position; }
+    void setPosition(const QVector3D &position);
+
+    QVector3D target() const { return m_target; }
+    void setTarget(const QVector3D &target);
+
+    float fov() const { return m_fov; }
+    void setFov(float fov);
+
+    float nearPlane() const { return m_nearPlane; }
+    void setNearPlane(float nearPlane);
+
+    float farPlane() const { return m_farPlane; }
+    void setFarPlane(float farPlane);
+
+Q_SIGNALS:
+    void positionChanged();
+    void targetChanged();
+    void fovChanged();
+    void nearPlaneChanged();
+    void farPlaneChanged();
+
+private:
+    void notifyParent();
+
+    QVector3D m_position = QVector3D(0.0f, 1.0f, 5.0f);
+    QVector3D m_target = QVector3D(0.0f, 0.0f, 0.0f);
+    float m_fov = 60.0f;
+    float m_nearPlane = 0.1f;
+    float m_farPlane = 200.0f;
+};

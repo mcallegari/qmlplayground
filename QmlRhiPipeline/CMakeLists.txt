@@ -1,61 +1,77 @@
-
-cmake_minimum_required(VERSION 3.16)
+cmake_minimum_required(VERSION 3.20)
 project(qmlrhipipeline LANGUAGES CXX)
 
-set(CMAKE_BUILD_TYPE "Debug")
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_AUTOMOC ON)
+set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick ShaderTools)
-find_package(assimp REQUIRED)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui ShaderTools GuiPrivate Quick Qml)
+find_package(assimp QUIET)
 
-qt_standard_project_setup()
-
-qt_add_executable(qmlrhipipeline WIN32 MACOSX_BUNDLE
-    main.cpp
-    rhiqmlitem.cpp rhiqmlitem.h
+add_executable(qmlrhipipeline
+    src/main.cpp
+    src/core/RhiContext.cpp
+    src/core/RenderGraph.cpp
+    src/core/RenderTargetCache.cpp
+    src/core/ShaderManager.cpp
+    src/qml/CameraItem.cpp
+    src/qml/CubeItem.cpp
+    src/qml/LightItem.cpp
+    src/qml/ModelItem.cpp
+    src/qml/RhiQmlItem.cpp
+    src/renderer/DeferredRenderer.cpp
+    src/renderer/PassDepth.cpp
+    src/renderer/PassGBuffer.cpp
+    src/renderer/PassLightCulling.cpp
+    src/renderer/PassLighting.cpp
+    src/renderer/PassShadow.cpp
+    src/renderer/PassPost.cpp
+    src/scene/AssimpLoader.cpp
+    src/scene/Camera.cpp
+    src/scene/Material.cpp
+    src/scene/Mesh.cpp
+    src/scene/Scene.cpp
 )
 
-set_target_properties(qmlrhipipeline PROPERTIES
-    # Prevent name clash with build subdirectory on case-insensitive file systems
-    OUTPUT_NAME qmlrhipipelineapp
-)
+target_include_directories(qmlrhipipeline PRIVATE src)
 
-target_link_libraries(qmlrhipipeline PRIVATE
-    Qt6::Core
-    Qt6::GuiPrivate
-    Qt6::Qml
-    Qt6::Quick
-    assimp
-)
+target_link_libraries(qmlrhipipeline PRIVATE Qt6::Core Qt6::Gui Qt6::GuiPrivate)
+target_link_libraries(qmlrhipipeline PRIVATE Qt6::ShaderTools Qt6::Quick Qt6::Qml)
 
-qt_add_qml_module(qmlrhipipeline
-    URI RhiQmlItem
-    QML_FILES
-        main.qml
-    RESOURCE_PREFIX /
-    NO_RESOURCE_TARGET_PATH
-)
+if(assimp_FOUND)
+    target_link_libraries(qmlrhipipeline PRIVATE assimp::assimp)
+else()
+    target_compile_definitions(qmlrhipipeline PRIVATE RHIPIPELINE_NO_ASSIMP)
+endif()
 
-qt_add_shaders(qmlrhipipeline "qmlrhipipeline_shaders"
-    PRECOMPILE
-    OPTIMIZED
-    PREFIX /
-    BASE shaders
+qt_add_shaders(qmlrhipipeline qmlrhipipeline_shaders
+    PREFIX "/shaders"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    GLSL "430,310es"
     FILES
-        shaders/scene_pass.vert
-        shaders/scene_pass.frag
+        shaders/gbuffer.vert
+        shaders/gbuffer.frag
+        shaders/lighting.vert
+        shaders/lighting.frag
+        shaders/debug_bounds.vert
+        shaders/debug_bounds.frag
+        shaders/shadow.vert
+        shaders/shadow.frag
+        shaders/shadow_spot.frag
+        shaders/tonemap.frag
 )
 
-install(TARGETS qmlrhipipeline
-    BUNDLE  DESTINATION .
-    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+qt_add_shaders(qmlrhipipeline qmlrhipipeline_compute_shaders
+    PREFIX "/shaders"
+    BASE "${CMAKE_CURRENT_SOURCE_DIR}/shaders"
+    GLSL "310es,430"
+    FILES
+        shaders/light_cull.comp
 )
 
-qt_generate_deploy_qml_app_script(
-    TARGET qmlrhipipeline
-    OUTPUT_SCRIPT deploy_script
-    MACOS_BUNDLE_POST_BUILD
-    NO_UNSUPPORTED_PLATFORM_ERROR
-    DEPLOY_USER_QML_MODULES_ON_UNSUPPORTED_PLATFORM
+qt_add_resources(qmlrhipipeline qmlrhipipeline_qml
+    PREFIX "/"
+    FILES
+        qml/Main.qml
 )
-install(SCRIPT ${deploy_script})
