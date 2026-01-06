@@ -19,12 +19,12 @@ bool RhiContext::initialize(QWindow *window)
     };
 
 #if defined(Q_OS_MACOS)
-    const BackendAttempt attempts[] = {
+    const BackendAttempt defaultAttempts[] = {
         { QRhi::Metal, "Metal" },
         { QRhi::OpenGLES2, "OpenGLES2" }
     };
 #elif defined(Q_OS_WIN)
-    const BackendAttempt attempts[] = {
+    const BackendAttempt defaultAttempts[] = {
         { QRhi::D3D11, "D3D11" },
         { QRhi::Vulkan, "Vulkan" },
         { QRhi::OpenGLES2, "OpenGLES2" }
@@ -43,18 +43,11 @@ bool RhiContext::initialize(QWindow *window)
     } else if (backendOverride == "opengl" || backendOverride == "gles2") {
         attempts.push_back({ QRhi::OpenGLES2, "OpenGLES2" });
     } else {
-#if defined(Q_OS_MACOS)
-        attempts = { { QRhi::Metal, "Metal" }, { QRhi::OpenGLES2, "OpenGLES2" } };
-#elif defined(Q_OS_WIN)
-        attempts = { { QRhi::D3D11, "D3D11" }, { QRhi::Vulkan, "Vulkan" }, { QRhi::OpenGLES2, "OpenGLES2" } };
-#else
         for (const BackendAttempt &attempt : defaultAttempts)
             attempts.push_back(attempt);
-#endif
     }
 
     for (const BackendAttempt &attempt : attempts) {
-        qDebug() << "RhiContext: trying backend" << attempt.name;
         if (attempt.impl == QRhi::Vulkan) {
 #if QT_CONFIG(vulkan)
             m_window->setSurfaceType(QSurface::VulkanSurface);
@@ -120,31 +113,6 @@ bool RhiContext::initialize(QWindow *window)
             continue;
 
         m_backend = attempt.impl;
-        qDebug() << "RhiContext: backend created" << attempt.name;
-        if (m_backend == QRhi::OpenGLES2)
-            qDebug() << "RhiContext: OpenGLES2 backend uses OpenGL (desktop core) when available";
-
-        const QRhiDriverInfo info = m_rhi->driverInfo();
-        qDebug() << "RhiContext: driver device"
-                 << info.deviceName
-                 << "vendorId" << QString::number(info.vendorId, 16)
-                 << "deviceId" << QString::number(info.deviceId, 16)
-                 << "type" << info.deviceType;
-
-        if (m_backend == QRhi::OpenGLES2 && m_glContext && m_glOffscreenSurface) {
-            if (m_glContext->makeCurrent(m_glOffscreenSurface)) {
-                QOpenGLFunctions *f = m_glContext->functions();
-                const char *vendor = reinterpret_cast<const char *>(f->glGetString(GL_VENDOR));
-                const char *renderer = reinterpret_cast<const char *>(f->glGetString(GL_RENDERER));
-                const char *version = reinterpret_cast<const char *>(f->glGetString(GL_VERSION));
-                qDebug() << "RhiContext: OpenGL vendor" << (vendor ? vendor : "unknown");
-                qDebug() << "RhiContext: OpenGL renderer" << (renderer ? renderer : "unknown");
-                qDebug() << "RhiContext: OpenGL version" << (version ? version : "unknown");
-                m_glContext->doneCurrent();
-            } else {
-                qWarning() << "RhiContext: failed to make GL context current for driver info";
-            }
-        }
         break;
     }
 
@@ -262,3 +230,6 @@ void RhiContext::clearExternalFrame()
     m_externalCb = nullptr;
     m_externalRt = nullptr;
 }
+
+
+

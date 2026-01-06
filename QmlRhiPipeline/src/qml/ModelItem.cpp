@@ -43,6 +43,15 @@ void ModelItem::setScale(const QVector3D &scale)
     notifyParent();
 }
 
+void ModelItem::setIsSelected(bool selected)
+{
+    if (m_isSelected == selected)
+        return;
+    m_isSelected = selected;
+    emit isSelectedChanged();
+    notifyParent();
+}
+
 void ModelItem::notifyParent()
 {
     auto *item = qobject_cast<QQuickItem *>(parent());

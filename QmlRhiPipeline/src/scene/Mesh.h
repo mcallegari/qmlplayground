@@ -32,5 +32,6 @@ struct Mesh
     QVector3D boundsMin = QVector3D(0.0f, 0.0f, 0.0f);
     QVector3D boundsMax = QVector3D(0.0f, 0.0f, 0.0f);
     bool boundsValid = false;
+    bool selected = false;
     Material material;
 };

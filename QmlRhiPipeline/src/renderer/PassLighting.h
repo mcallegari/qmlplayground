@@ -21,7 +21,7 @@ public:
 
 private:
     void ensurePipeline(FrameContext &ctx);
-    void ensureDebugPipeline(FrameContext &ctx, QRhiRenderTarget *rt);
+    void ensureSelectionBoxesPipeline(FrameContext &ctx, QRhiRenderTarget *rt);
     void updateGoboTextures(FrameContext &ctx, QRhiResourceUpdateBatch *u);
 
     QRhiGraphicsPipeline *m_pipeline = nullptr;
@@ -33,6 +33,7 @@ private:
     QRhiBuffer *m_lightsUbo = nullptr;
     QRhiBuffer *m_cameraUbo = nullptr;
     QRhiBuffer *m_shadowUbo = nullptr;
+    QRhiBuffer *m_flipUbo = nullptr;
     QRhiRenderPassDescriptor *m_rpDesc = nullptr;
     QRhiTexture *m_shadowMapRefs[3] = { nullptr, nullptr, nullptr };
     QRhiTexture *m_gbufColor0 = nullptr;
@@ -46,10 +47,12 @@ private:
     QSize m_spotGoboSize = QSize(256, 256);
     bool m_reverseZ = false;
 
-    QRhiGraphicsPipeline *m_debugPipeline = nullptr;
-    QRhiShaderResourceBindings *m_debugSrb = nullptr;
-    QRhiBuffer *m_debugUbo = nullptr;
-    QRhiBuffer *m_debugVbuf = nullptr;
-    QRhiRenderPassDescriptor *m_debugRpDesc = nullptr;
-    int m_debugMaxVertices = 0;
+    QRhiGraphicsPipeline *m_selectionPipeline = nullptr;
+    QRhiShaderResourceBindings *m_selectionSrb = nullptr;
+    QRhiBuffer *m_selectionUbo = nullptr;
+    QRhiBuffer *m_selectionDepthUbo = nullptr;
+    QRhiBuffer *m_selectionVbuf = nullptr;
+    QRhiRenderPassDescriptor *m_selectionRpDesc = nullptr;
+    int m_selectionMaxVertices = 0;
+
 };

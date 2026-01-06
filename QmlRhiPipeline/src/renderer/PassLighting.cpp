@@ -35,6 +35,10 @@ static QImage loadGoboImage(const QString &path, const QSize &size)
 
 void PassLighting::prepare(FrameContext &ctx)
 {
+    if (qEnvironmentVariableIsSet("RHIPIPELINE_SKIP_LIGHTING")) {
+        qWarning() << "PassLighting: skipping lighting (RHIPIPELINE_SKIP_LIGHTING)";
+        return;
+    }
     ensurePipeline(ctx);
 }
 
@@ -162,7 +166,14 @@ void PassLighting::execute(FrameContext &ctx)
     u->updateDynamicBuffer(m_lightsUbo, 0, sizeof(LightsData), &lightData);
     u->updateDynamicBuffer(m_cameraUbo, 0, sizeof(CameraData), &camData);
     if (m_shadowUbo)
-        u->updateDynamicBuffer(m_shadowUbo, 0, sizeof(ShadowDataGpu), &shadowData);
+    u->updateDynamicBuffer(m_shadowUbo, 0, sizeof(ShadowDataGpu), &shadowData);
+    const bool flipSampleY = !ctx.rhi->rhi()->isYUpInFramebuffer();
+    const bool flipNdcY = !ctx.rhi->rhi()->isYUpInNDC();
+    const QVector4D flipData(flipSampleY ? 1.0f : 0.0f,
+                             flipNdcY ? 1.0f : 0.0f,
+                             0.0f,
+                             0.0f);
+    u->updateDynamicBuffer(m_flipUbo, 0, sizeof(flipData), &flipData);
     updateGoboTextures(ctx, u);
 
     cb->resourceUpdate(u);
@@ -175,19 +186,27 @@ void PassLighting::execute(FrameContext &ctx)
     cb->setShaderResources(m_srb);
     cb->draw(3);
 
-    if (ctx.scene->debugBounds())
-        ensureDebugPipeline(ctx, rt);
+    bool anySelected = false;
+    for (const Mesh &mesh : ctx.scene->meshes()) {
+        if (mesh.selected) {
+            anySelected = true;
+            break;
+        }
+    }
 
-    if (ctx.scene->debugBounds() && m_debugPipeline && m_debugSrb && m_debugVbuf) {
-        struct DebugVertex {
+    if (anySelected)
+        ensureSelectionBoxesPipeline(ctx, rt);
+
+    if (anySelected && m_selectionPipeline && m_selectionSrb && m_selectionVbuf) {
+        struct SelectionVertex {
             float x;
             float y;
             float z;
         };
 
         const auto &meshes = ctx.scene->meshes();
-        const int maxVertices = m_debugMaxVertices > 0 ? m_debugMaxVertices : 0;
-        std::vector<DebugVertex> vertices;
+        const int maxVertices = m_selectionMaxVertices > 0 ? m_selectionMaxVertices : 0;
+        std::vector<SelectionVertex> vertices;
         if (maxVertices > 0)
             vertices.reserve(qMin(int(meshes.size()) * 24, maxVertices));
 
@@ -198,6 +217,8 @@ void PassLighting::execute(FrameContext &ctx)
         };
 
         for (const Mesh &mesh : meshes) {
+            if (!mesh.selected)
+                continue;
             if (mesh.vertices.isEmpty())
                 continue;
 
@@ -245,14 +266,19 @@ void PassLighting::execute(FrameContext &ctx)
                     * ctx.scene->camera().projectionMatrix()
                     * ctx.scene->camera().viewMatrix();
             const quint32 mat4Size = 16 * sizeof(float);
-            u->updateDynamicBuffer(m_debugUbo, 0, mat4Size, viewProj.constData());
-            u->updateDynamicBuffer(m_debugVbuf, 0, int(vertices.size() * sizeof(DebugVertex)), vertices.data());
+            const QVector4D depthParams(ctx.shadows ? ctx.shadows->shadowDepthParams.x() : 1.0f,
+                                        ctx.shadows ? ctx.shadows->shadowDepthParams.y() : 0.0f,
+                                        ctx.shadows ? ctx.shadows->shadowDepthParams.z() : 0.0f,
+                                        (!ctx.rhi->rhi()->isYUpInFramebuffer()) ? 1.0f : 0.0f);
+            u->updateDynamicBuffer(m_selectionUbo, 0, mat4Size, viewProj.constData());
+            u->updateDynamicBuffer(m_selectionDepthUbo, 0, sizeof(depthParams), &depthParams);
+            u->updateDynamicBuffer(m_selectionVbuf, 0, int(vertices.size() * sizeof(SelectionVertex)), vertices.data());
             cb->resourceUpdate(u);
 
-            cb->setGraphicsPipeline(m_debugPipeline);
+            cb->setGraphicsPipeline(m_selectionPipeline);
             cb->setViewport(QRhiViewport(0, 0, rt->pixelSize().width(), rt->pixelSize().height()));
-            cb->setShaderResources(m_debugSrb);
-            const QRhiCommandBuffer::VertexInput vbufBinding(m_debugVbuf, 0);
+            cb->setShaderResources(m_selectionSrb);
+            const QRhiCommandBuffer::VertexInput vbufBinding(m_selectionVbuf, 0);
             cb->setVertexInput(0, 1, &vbufBinding);
             cb->draw(quint32(vertices.size()));
         }
@@ -309,6 +335,8 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     m_cameraUbo = nullptr;
     delete m_shadowUbo;
     m_shadowUbo = nullptr;
+    delete m_flipUbo;
+    m_flipUbo = nullptr;
     delete m_spotGoboMap;
     m_spotGoboMap = nullptr;
     for (QString &path : m_spotGoboPaths)
@@ -359,7 +387,8 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
         float shadowDepthParams[4];
     };
     m_shadowUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(ShadowDataGpu));
-    if (!m_lightsUbo->create() || !m_cameraUbo->create() || !m_shadowUbo->create())
+    m_flipUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D));
+    if (!m_lightsUbo->create() || !m_cameraUbo->create() || !m_shadowUbo->create() || !m_flipUbo->create())
         return;
 
     if (!gbuf.color0 || !gbuf.color1 || !gbuf.color2) {
@@ -386,7 +415,8 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
         QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, gbuf.color2, m_sampler),
         QRhiShaderResourceBinding::uniformBuffer(3, QRhiShaderResourceBinding::FragmentStage, m_lightsUbo),
         QRhiShaderResourceBinding::uniformBuffer(4, QRhiShaderResourceBinding::FragmentStage, m_cameraUbo),
-        QRhiShaderResourceBinding::uniformBuffer(5, QRhiShaderResourceBinding::FragmentStage, m_shadowUbo)
+        QRhiShaderResourceBinding::uniformBuffer(5, QRhiShaderResourceBinding::FragmentStage, m_shadowUbo),
+        QRhiShaderResourceBinding::uniformBuffer(12, QRhiShaderResourceBinding::FragmentStage, m_flipUbo)
     };
 
     if (ctx.shadows && ctx.shadows->shadowMaps[0]) {
@@ -420,17 +450,6 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
         qWarning() << "PassLighting: failed to create SRB";
         return;
     }
-    static bool s_loggedShadowMaps = false;
-    if (!s_loggedShadowMaps) {
-        qDebug() << "PassLighting: shadow maps"
-                 << "dir0" << (ctx.shadows ? ctx.shadows->shadowMaps[0] : nullptr)
-                 << "dir1" << (ctx.shadows ? ctx.shadows->shadowMaps[1] : nullptr)
-                 << "dir2" << (ctx.shadows ? ctx.shadows->shadowMaps[2] : nullptr)
-                 << "spot" << (ctx.shadows ? ctx.shadows->spotShadowMap : nullptr)
-                 << "gbufDepth" << gbuf.depth;
-        s_loggedShadowMaps = true;
-    }
-
     const QRhiShaderStage vs = ctx.shaders->loadStage(QRhiShaderStage::Vertex, QStringLiteral(":/shaders/lighting.vert.qsb"));
     const QRhiShaderStage fs = ctx.shaders->loadStage(QRhiShaderStage::Fragment, QStringLiteral(":/shaders/lighting.frag.qsb"));
     if (!vs.shader().isValid() || !fs.shader().isValid())
@@ -454,44 +473,54 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     m_rpDesc = rt->renderPassDescriptor();
 }
 
-void PassLighting::ensureDebugPipeline(FrameContext &ctx, QRhiRenderTarget *rt)
+void PassLighting::ensureSelectionBoxesPipeline(FrameContext &ctx, QRhiRenderTarget *rt)
 {
-    if (!ctx.rhi || !ctx.shaders || !rt)
+    if (!ctx.rhi || !ctx.shaders || !rt || !ctx.targets)
         return;
 
-    if (m_debugPipeline && m_debugRpDesc == rt->renderPassDescriptor())
+    if (m_selectionPipeline && m_selectionRpDesc == rt->renderPassDescriptor())
         return;
 
-    delete m_debugPipeline;
-    m_debugPipeline = nullptr;
-    delete m_debugSrb;
-    m_debugSrb = nullptr;
-    delete m_debugUbo;
-    m_debugUbo = nullptr;
-    delete m_debugVbuf;
-    m_debugVbuf = nullptr;
+    delete m_selectionPipeline;
+    m_selectionPipeline = nullptr;
+    delete m_selectionSrb;
+    m_selectionSrb = nullptr;
+    delete m_selectionUbo;
+    m_selectionUbo = nullptr;
+    delete m_selectionVbuf;
+    m_selectionVbuf = nullptr;
+    delete m_selectionDepthUbo;
+    m_selectionDepthUbo = nullptr;
 
     const quint32 mat4Size = 16 * sizeof(float);
-    m_debugUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, mat4Size);
-    if (!m_debugUbo->create())
+    m_selectionUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, mat4Size);
+    if (!m_selectionUbo->create())
+        return;
+
+    m_selectionDepthUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D));
+    if (!m_selectionDepthUbo->create())
         return;
 
     const int maxMeshes = 256;
-    m_debugMaxVertices = maxMeshes * 24;
-    m_debugVbuf = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
-                                            m_debugMaxVertices * int(sizeof(float) * 3));
-    if (!m_debugVbuf->create())
+    m_selectionMaxVertices = maxMeshes * 24;
+    m_selectionVbuf = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::VertexBuffer,
+                                            m_selectionMaxVertices * int(sizeof(float) * 3));
+    if (!m_selectionVbuf->create())
         return;
 
-    m_debugSrb = ctx.rhi->rhi()->newShaderResourceBindings();
-    m_debugSrb->setBindings({
-        QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, m_debugUbo)
+    m_selectionSrb = ctx.rhi->rhi()->newShaderResourceBindings();
+    m_selectionSrb->setBindings({
+        QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, m_selectionUbo),
+        QRhiShaderResourceBinding::uniformBuffer(1, QRhiShaderResourceBinding::FragmentStage, m_selectionDepthUbo),
+        QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage,
+                                                  ctx.targets->getOrCreateGBuffer(rt->pixelSize(), 1).depth,
+                                                  m_sampler)
     });
-    if (!m_debugSrb->create())
+    if (!m_selectionSrb->create())
         return;
 
-    const QRhiShaderStage vs = ctx.shaders->loadStage(QRhiShaderStage::Vertex, QStringLiteral(":/shaders/debug_bounds.vert.qsb"));
-    const QRhiShaderStage fs = ctx.shaders->loadStage(QRhiShaderStage::Fragment, QStringLiteral(":/shaders/debug_bounds.frag.qsb"));
+    const QRhiShaderStage vs = ctx.shaders->loadStage(QRhiShaderStage::Vertex, QStringLiteral(":/shaders/selection_box.vert.qsb"));
+    const QRhiShaderStage fs = ctx.shaders->loadStage(QRhiShaderStage::Fragment, QStringLiteral(":/shaders/selection_box.frag.qsb"));
     if (!vs.shader().isValid() || !fs.shader().isValid())
         return;
 
@@ -505,12 +534,13 @@ void PassLighting::ensureDebugPipeline(FrameContext &ctx, QRhiRenderTarget *rt)
     pipeline->setCullMode(QRhiGraphicsPipeline::None);
     pipeline->setDepthTest(false);
     pipeline->setDepthWrite(false);
-    pipeline->setShaderResourceBindings(m_debugSrb);
+    pipeline->setShaderResourceBindings(m_selectionSrb);
     pipeline->setRenderPassDescriptor(rt->renderPassDescriptor());
 
     if (!pipeline->create())
         return;
 
-    m_debugPipeline = pipeline;
-    m_debugRpDesc = rt->renderPassDescriptor();
+    m_selectionPipeline = pipeline;
+    m_selectionRpDesc = rt->renderPassDescriptor();
 }
+

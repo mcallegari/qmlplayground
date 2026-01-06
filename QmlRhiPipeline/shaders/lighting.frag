@@ -1,10 +1,12 @@
 #version 450
 
 #define MAX_LIGHTS 32
-
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 outColor;
 
+layout(std140, binding = 12) uniform FlipUbo {
+    vec4 flip;
+} uFlip;
 layout(binding = 0) uniform sampler2D gbuf0;
 layout(binding = 1) uniform sampler2D gbuf1;
 layout(binding = 2) uniform sampler2D gbuf2;
@@ -45,15 +47,12 @@ vec3 decodeNormal(vec3 enc)
     return normalize(enc * 2.0 - 1.0);
 }
 
-vec3 reconstructWorldPos(vec2 uv)
+vec3 reconstructWorldPosWithDepth(vec2 uvNdc, float depth)
 {
-    if (uShadow.shadowDepthParams.w > 0.5)
-        return texture(gbuf2, uv).rgb;
-    float depth = texture(gbufDepth, uv).r;
     float scale = uShadow.shadowDepthParams.x;
     float bias = uShadow.shadowDepthParams.y;
     float ndcZ = (depth - bias) / max(scale, 1e-6);
-    vec4 clip = vec4(uv * 2.0 - 1.0, ndcZ, 1.0);
+    vec4 clip = vec4(uvNdc * 2.0 - 1.0, ndcZ, 1.0);
     vec4 world = uCamera.invViewProj * clip;
     return world.xyz / max(world.w, 1e-6);
 }
@@ -129,7 +128,7 @@ float sampleSpotShadowPcf(mat4 viewProj, vec3 worldPos, vec3 lightPos,
     for (int y = -1; y <= 1; ++y) {
         for (int x = -1; x <= 1; ++x) {
             vec2 offset = vec2(float(x), float(y)) * texel;
-            float shadowDepth = texture(spotShadowMap, uv + offset).r;
+            float shadowDepth = textureLod(spotShadowMap, uv + offset, 0.0).r;
             sum += depth - bias <= shadowDepth ? 1.0 : 0.0;
         }
     }
@@ -169,14 +168,26 @@ float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
 
 void main()
 {
-    vec3 baseColor = texture(gbuf0, vUv).rgb;
-    float metalness = texture(gbuf0, vUv).a;
+    vec2 uvSample = vUv;
+    if (uFlip.flip.x > 0.5)
+        uvSample.y = 1.0 - uvSample.y;
+    vec2 uvNdc = vUv;
+    if (uFlip.flip.y > 0.5)
+        uvNdc.y = 1.0 - uvNdc.y;
 
-    vec3 N = decodeNormal(texture(gbuf1, vUv).rgb);
-    float roughness = texture(gbuf1, vUv).a;
+    vec3 baseColor = texture(gbuf0, uvSample).rgb;
+    float metalness = texture(gbuf0, uvSample).a;
 
-    vec3 worldPos = reconstructWorldPos(vUv);
-    float occlusion = texture(gbuf2, vUv).a;
+    vec3 N = decodeNormal(texture(gbuf1, uvSample).rgb);
+    float roughness = texture(gbuf1, uvSample).a;
+
+    float depthSample = texture(gbufDepth, uvSample).r;
+    vec3 worldPos;
+    if (uShadow.shadowDepthParams.w > 0.5)
+        worldPos = texture(gbuf2, uvSample).rgb;
+    else
+        worldPos = reconstructWorldPosWithDepth(uvNdc, depthSample);
+    float occlusion = texture(gbuf2, uvSample).a;
 
     vec3 V = normalize(uCamera.cameraPos.xyz - worldPos);
 
@@ -297,19 +308,22 @@ void main()
     vec3 color = (Lo + ambient * baseColor) * occlusion;
 
     // Volumetric spotlight beam (screen-space, coarse ray-march).
-    float depth = texture(gbufDepth, vUv).r;
+    float depth = depthSample;
     float farDepth = (uShadow.shadowDepthParams.z > 0.5) ? 0.0 : 1.0;
     bool hasHit = abs(depth - farDepth) > 0.0005;
     vec3 rayDir;
     float rayLen;
     vec3 hitPos = uCamera.cameraPos.xyz;
     if (hasHit) {
-        hitPos = reconstructWorldPos(vUv);
+        if (uShadow.shadowDepthParams.w > 0.5)
+            hitPos = texture(gbuf2, uvSample).rgb;
+        else
+            hitPos = reconstructWorldPosWithDepth(uvNdc, depthSample);
         vec3 toHit = hitPos - uCamera.cameraPos.xyz;
         rayLen = length(toHit);
         rayDir = rayLen > 0.0 ? toHit / rayLen : vec3(0.0, 0.0, -1.0);
     } else {
-        vec4 clip = vec4(vUv * 2.0 - 1.0, 1.0, 1.0);
+        vec4 clip = vec4(uvNdc * 2.0 - 1.0, 1.0, 1.0);
         vec4 worldFar = uCamera.invViewProj * clip;
         worldFar.xyz /= max(worldFar.w, 0.0001);
         rayDir = normalize(worldFar.xyz - uCamera.cameraPos.xyz);
@@ -389,7 +403,7 @@ void main()
                 vec2 goboUv;
                 if (!spotProject(uShadow.spotLightViewProj[i], p, goboUv))
                     continue;
-                gobo = texture(spotGoboMap, vec3(goboUv, other.z)).rgb;
+                gobo = textureLod(spotGoboMap, vec3(goboUv, other.z), 0.0).rgb;
             }
             beam += ci.xyz * ci.w * density * stepLen * gobo;
         }

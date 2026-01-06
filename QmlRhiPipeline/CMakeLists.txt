@@ -54,8 +54,8 @@ qt_add_shaders(qmlrhipipeline qmlrhipipeline_shaders
         shaders/gbuffer.frag
         shaders/lighting.vert
         shaders/lighting.frag
-        shaders/debug_bounds.vert
-        shaders/debug_bounds.frag
+        shaders/selection_box.vert
+        shaders/selection_box.frag
         shaders/shadow.vert
         shaders/shadow.frag
         shaders/shadow_spot.frag

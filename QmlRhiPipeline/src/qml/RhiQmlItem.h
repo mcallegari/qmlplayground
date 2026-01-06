@@ -17,7 +17,6 @@ class RhiQmlItem : public QQuickRhiItem
     Q_PROPERTY(float cameraFov READ cameraFov WRITE setCameraFov NOTIFY cameraFovChanged)
     Q_PROPERTY(QVector3D ambientLight READ ambientLight WRITE setAmbientLight NOTIFY ambientLightChanged)
     Q_PROPERTY(float ambientIntensity READ ambientIntensity WRITE setAmbientIntensity NOTIFY ambientIntensityChanged)
-    Q_PROPERTY(bool debugBounds READ debugBounds WRITE setDebugBounds NOTIFY debugBoundsChanged)
     Q_PROPERTY(bool freeCameraEnabled READ freeCameraEnabled WRITE setFreeCameraEnabled NOTIFY freeCameraEnabledChanged)
     Q_PROPERTY(float moveSpeed READ moveSpeed WRITE setMoveSpeed NOTIFY moveSpeedChanged)
     Q_PROPERTY(float lookSensitivity READ lookSensitivity WRITE setLookSensitivity NOTIFY lookSensitivityChanged)
@@ -38,8 +37,6 @@ public:
     void setAmbientLight(const QVector3D &ambient);
     float ambientIntensity() const { return m_ambientIntensity; }
     void setAmbientIntensity(float intensity);
-    bool debugBounds() const { return m_debugBounds; }
-    void setDebugBounds(bool enable);
     bool freeCameraEnabled() const { return m_freeCameraEnabled; }
     void setFreeCameraEnabled(bool enabled);
     float moveSpeed() const { return m_moveSpeed; }
@@ -86,7 +83,6 @@ Q_SIGNALS:
     void cameraFovChanged();
     void ambientLightChanged();
     void ambientIntensityChanged();
-    void debugBoundsChanged();
     void freeCameraEnabledChanged();
     void moveSpeedChanged();
     void lookSensitivityChanged();
@@ -110,7 +106,6 @@ private:
     float m_cameraFov = 60.0f;
     QVector3D m_ambientLight = QVector3D(0.0f, 0.0f, 0.0f);
     float m_ambientIntensity = 1.0f;
-    bool m_debugBounds = false;
     bool m_freeCameraEnabled = false;
     float m_moveSpeed = 5.0f;
     float m_lookSensitivity = 0.2f;

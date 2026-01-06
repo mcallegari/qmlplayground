@@ -18,7 +18,6 @@ Window {
         moveSpeed: 5.0
         lookSensitivity: 0.2
 
-        debugBounds: true
         Keys.onPressed: function(event) {
             var step = meshStep
             if (event.modifiers & Qt.ShiftModifier)
@@ -78,20 +77,24 @@ Window {
             position: cubePos
             rotationDegrees: Qt.vector3d(0, 0, 0)
             scale: Qt.vector3d(1, 1, 1)
+            isSelected: true
         }
 
         Cube {
             position: Qt.vector3d(0, -2.5, 0)
             rotationDegrees: Qt.vector3d(0, 0, 0)
             scale: Qt.vector3d(8, 0.2, 8)
+            //isSelected: true
         }
 
         Model {
-            path: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
+            path: "C:/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
             position: Qt.vector3d(1.5, -1.2, 0)
             rotationDegrees: Qt.vector3d(0, -30, 0)
             scale: Qt.vector3d(1, 1, 1)
+            isSelected: true
         }
+
     }
 
 }

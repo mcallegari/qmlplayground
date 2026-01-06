@@ -32,6 +32,5 @@ QRhiShaderStage ShaderManager::loadStage(QRhiShaderStage::Type type, const QStri
         qWarning() << "Invalid shader payload:" << path;
         return {};
     }
-
     return QRhiShaderStage(type, shader);
 }

@@ -1,6 +1,5 @@
 #include "core/RenderTargetCache.h"
 
-#include <QtCore/QDebug>
 
 RenderTargetCache::RenderTargetCache(QRhi *rhi)
     : m_rhi(rhi)
@@ -22,7 +21,6 @@ RenderTargetCache::GBufferTargets RenderTargetCache::getOrCreateGBuffer(const QS
         gbufFormat = QRhiTexture::RGBA8;
         qWarning() << "RenderTargetCache: RGBA16F not supported, falling back to RGBA8";
     }
-    qDebug() << "RenderTargetCache: GBuffer format" << gbufFormat;
 
     QRhiTexture::Format depthFormat = QRhiTexture::D24S8;
     if (!m_rhi->isTextureFormatSupported(depthFormat, QRhiTexture::RenderTarget)) {

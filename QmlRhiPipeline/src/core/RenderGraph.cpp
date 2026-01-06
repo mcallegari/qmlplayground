@@ -1,6 +1,5 @@
 #include "core/RenderGraph.h"
 
-#include <QtCore/QDebug>
 
 void RenderGraph::addPass(std::unique_ptr<RenderPass> pass)
 {

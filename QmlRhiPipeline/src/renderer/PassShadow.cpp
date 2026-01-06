@@ -48,15 +48,6 @@ void PassShadow::prepare(FrameContext &ctx)
         ctx.shadows->spotShadowMap = m_spotShadowMap;
         ctx.shadows->shadowDepthParams = QVector4D(depthScale, depthBias,
                                                    reverseZ ? 1.0f : 0.0f, 0.0f);
-        static bool s_loggedMaps = false;
-        if (!s_loggedMaps) {
-            qDebug() << "PassShadow: color maps"
-                     << m_cascades[0].color << m_cascades[1].color << m_cascades[2].color
-                     << "spot" << m_spotShadowMap
-                     << "spotDepth" << m_spotDepthStencil;
-            qDebug() << "PassShadow: reverseZ" << reverseZ;
-            s_loggedMaps = true;
-        }
     }
 }
 
@@ -147,26 +138,10 @@ void PassShadow::execute(FrameContext &ctx)
             const Light &light = lights[lightIndex];
             float nearPlane = 1.0f;
             float farPlane = qMax(light.range, nearPlane + 0.1f);
-            static bool s_loggedSpotFit = false;
-            if (!s_loggedSpotFit) {
-                qDebug() << "PassShadow: spot fit"
-                         << "near" << nearPlane
-                         << "far" << farPlane
-                         << "pos" << light.position
-                         << "dir" << light.direction
-                         << "coneDeg" << qRadiansToDegrees(light.outerCone);
-                s_loggedSpotFit = true;
-            }
             const QMatrix4x4 lightViewProj = clipCorr * computeSpotViewProj(light, nearPlane, farPlane);
             ctx.shadows->spotLightViewProj[lightIndex] = lightViewProj;
             ctx.shadows->spotShadowParams[lightIndex] = QVector4D(0.0f, 1.0f, nearPlane, farPlane);
             renderSpot(ctx, lightViewProj, light.position, nearPlane, farPlane);
-        } else {
-            static bool s_loggedNoSpot = false;
-            if (!s_loggedNoSpot) {
-                qDebug() << "PassShadow: no spot shadow candidates";
-                s_loggedNoSpot = true;
-            }
         }
     }
 }
@@ -537,16 +512,6 @@ QMatrix4x4 PassShadow::computeLightViewProj(const Camera &camera, const QVector3
         orthoNear = 0.1f;
     if (orthoFar <= orthoNear + 0.1f)
         orthoFar = orthoNear + 0.1f;
-    static bool s_loggedOrtho = false;
-    if (!s_loggedOrtho) {
-        qDebug() << "PassShadow: orthoZ"
-                 << "minZ" << minZ
-                 << "maxZ" << maxZ
-                 << "near" << orthoNear
-                 << "far" << orthoFar;
-        s_loggedOrtho = true;
-    }
-
     QMatrix4x4 proj;
     proj.ortho(minX, maxX, minY, maxY, orthoNear, orthoFar);
     return proj * view;

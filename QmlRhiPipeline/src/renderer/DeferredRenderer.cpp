@@ -10,7 +10,6 @@
 #include "renderer/PassPost.h"
 #include "renderer/PassShadow.h"
 #include "scene/Scene.h"
-#include <QtCore/QDebug>
 
 DeferredRenderer::DeferredRenderer() = default;
 
@@ -21,14 +20,18 @@ void DeferredRenderer::initialize(RhiContext *rhi, RenderTargetCache *targets, S
     m_frameCtx.shaders = shaders;
     m_frameCtx.shadows = &m_shadowData;
 
+    const bool skipLighting = qEnvironmentVariableIsSet("RHIPIPELINE_SKIP_LIGHTING");
     m_graph.clear();
     m_graph.addPass(std::make_unique<PassDepth>());
     m_graph.addPass(std::make_unique<PassGBuffer>());
     m_graph.addPass(std::make_unique<PassShadow>());
     m_graph.addPass(std::make_unique<PassLightCulling>());
-    m_graph.addPass(std::make_unique<PassLighting>());
+    if (skipLighting) {
+        qWarning() << "DeferredRenderer: skipping PassLighting (RHIPIPELINE_SKIP_LIGHTING)";
+    } else {
+        m_graph.addPass(std::make_unique<PassLighting>());
+    }
     m_graph.addPass(std::make_unique<PassPost>());
-    qDebug() << "DeferredRenderer: initialized passes with shadows";
 }
 
 void DeferredRenderer::resize(const QSize &size)

@@ -1,7 +1,6 @@
 #include "renderer/PassGBuffer.h"
 
 #include <QtGui/QMatrix4x4>
-#include <QtCore/QDebug>
 #include <cstring>
 #include <rhi/qrhi.h>
 

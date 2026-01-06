@@ -47,8 +47,6 @@ public:
     void setAmbientLight(const QVector3D &ambient) { m_ambientLight = ambient; }
     float ambientIntensity() const { return m_ambientIntensity; }
     void setAmbientIntensity(float intensity) { m_ambientIntensity = intensity; }
-    bool debugBounds() const { return m_debugBounds; }
-    void setDebugBounds(bool enable) { m_debugBounds = enable; }
 
 private:
     Camera m_camera;
@@ -56,5 +54,4 @@ private:
     QVector<Light> m_lights;
     QVector3D m_ambientLight = QVector3D(0.0f, 0.0f, 0.0f);
     float m_ambientIntensity = 1.0f;
-    bool m_debugBounds = false;
 };

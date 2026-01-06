@@ -107,9 +107,6 @@ public:
                 qWarning() << "RhiQmlItemRenderer: failed to load model" << entry.path;
                 continue;
             }
-            qDebug() << "RhiQmlItemRenderer: loaded model" << entry.path
-                     << "meshes" << (m_scene.meshes().size() - beforeCount)
-                     << "offset" << entry.position;
             for (int i = beforeCount; i < m_scene.meshes().size(); ++i) {
                 Mesh &mesh = m_scene.meshes()[i];
                 mesh.baseModelMatrix = mesh.modelMatrix;
@@ -135,10 +132,6 @@ public:
                         maxV.setZ(qMax(maxV.z(), v.pz));
                     }
                     const QVector3D center = (minV + maxV) * 0.5f;
-                    qDebug() << "RhiQmlItemRenderer: mesh" << i
-                             << "boundsCenter" << center
-                             << "modelPos" << mesh.modelMatrix.column(3).toVector3D()
-                             << "userOffset" << mesh.userOffset;
                 }
             }
         }
@@ -181,6 +174,12 @@ public:
                         mesh.userOffset = record.position;
                     }
                 }
+                const bool selected = modelItem->isSelected();
+                if (record.selected != selected) {
+                    record.selected = selected;
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                        m_scene.meshes()[i].selected = selected;
+                }
                 break;
             }
             if (found)
@@ -198,6 +197,7 @@ public:
             record.position = modelItem->position();
             record.rotationDegrees = modelItem->rotationDegrees();
             record.scale = modelItem->scale();
+            record.selected = modelItem->isSelected();
             record.firstMesh = beforeCount;
             record.meshCount = meshCount;
 
@@ -215,6 +215,7 @@ public:
                 mesh.baseModelMatrix = mesh.modelMatrix;
                 mesh.modelMatrix = transform * mesh.baseModelMatrix;
                 mesh.userOffset = record.position;
+                mesh.selected = record.selected;
             }
             m_qmlModels.push_back(record);
         }
@@ -246,6 +247,12 @@ public:
                         mesh.userOffset = record.position;
                     }
                 }
+                const bool selected = cubeItem->isSelected();
+                if (record.selected != selected) {
+                    record.selected = selected;
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                        m_scene.meshes()[i].selected = selected;
+                }
                 break;
             }
             if (found)
@@ -259,6 +266,7 @@ public:
             record.position = cubeItem->position();
             record.rotationDegrees = cubeItem->rotationDegrees();
             record.scale = cubeItem->scale();
+            record.selected = cubeItem->isSelected();
             record.firstMesh = beforeCount;
             record.meshCount = meshCount;
 
@@ -276,6 +284,7 @@ public:
                 mesh.baseModelMatrix = mesh.modelMatrix;
                 mesh.modelMatrix = transform * mesh.baseModelMatrix;
                 mesh.userOffset = record.position;
+                mesh.selected = record.selected;
             }
             m_qmlCubes.push_back(record);
         }
@@ -306,17 +315,19 @@ public:
         }
         m_scene.setAmbientLight(ambientTotal);
         m_scene.setAmbientIntensity(1.0f);
-        m_scene.setDebugBounds(qmlItem->debugBounds());
     }
 
     void render(QRhiCommandBuffer *cb) override
     {
         if (!m_initialized)
             return;
-        if (!cb || !renderTarget())
+        QRhiRenderTarget *rt = renderTarget();
+        if (!cb || !rt) {
+            qWarning() << "RhiQmlItemRenderer: missing cb/rt" << cb << rt;
             return;
+        }
 
-        m_rhiContext.setExternalFrame(cb, renderTarget());
+        m_rhiContext.setExternalFrame(cb, rt);
         m_renderer.render(&m_scene);
         m_rhiContext.clearExternalFrame();
     }
@@ -336,6 +347,7 @@ private:
         QVector3D position;
         QVector3D rotationDegrees;
         QVector3D scale;
+        bool selected = false;
         int firstMesh = 0;
         int meshCount = 0;
     };
@@ -345,6 +357,7 @@ private:
         QVector3D position;
         QVector3D rotationDegrees;
         QVector3D scale;
+        bool selected = false;
         int firstMesh = 0;
         int meshCount = 0;
     };
@@ -414,15 +427,6 @@ void RhiQmlItem::setAmbientIntensity(float intensity)
         return;
     m_ambientIntensity = intensity;
     emit ambientIntensityChanged();
-    update();
-}
-
-void RhiQmlItem::setDebugBounds(bool enable)
-{
-    if (m_debugBounds == enable)
-        return;
-    m_debugBounds = enable;
-    emit debugBoundsChanged();
     update();
 }
 
