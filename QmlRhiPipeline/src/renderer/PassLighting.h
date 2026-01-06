@@ -39,6 +39,7 @@ private:
     QRhiTexture *m_gbufColor0 = nullptr;
     QRhiTexture *m_gbufColor1 = nullptr;
     QRhiTexture *m_gbufColor2 = nullptr;
+    QRhiTexture *m_gbufColor3 = nullptr;
     QRhiTexture *m_gbufDepth = nullptr;
     bool m_gbufWorldPosFloat = false;
     QRhiTexture *m_spotShadowMaps[kMaxSpotShadows] = { nullptr };

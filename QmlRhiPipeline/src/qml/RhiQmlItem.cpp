@@ -250,7 +250,7 @@ public:
                 if (record.position != cubeItem->position()
                         || record.rotationDegrees != cubeItem->rotationDegrees()
                         || record.scale != cubeItem->scale())
-                        {
+                {
                     record.position = cubeItem->position();
                     record.rotationDegrees = cubeItem->rotationDegrees();
                     record.scale = cubeItem->scale();
@@ -268,6 +268,19 @@ public:
                         Mesh &mesh = m_scene.meshes()[i];
                         mesh.modelMatrix = transform * mesh.baseModelMatrix;
                         mesh.userOffset = record.position;
+                    }
+                }
+                const QVector3D baseColor = cubeItem->baseColor();
+                const QVector3D emissiveColor = cubeItem->emissiveColor();
+                if (record.baseColor != baseColor || record.emissiveColor != emissiveColor)
+                {
+                    record.baseColor = baseColor;
+                    record.emissiveColor = emissiveColor;
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                    {
+                        Mesh &mesh = m_scene.meshes()[i];
+                        mesh.material.baseColor = baseColor;
+                        mesh.material.emissive = emissiveColor;
                     }
                 }
                 const bool selected = cubeItem->isSelected();
@@ -291,6 +304,8 @@ public:
             record.rotationDegrees = cubeItem->rotationDegrees();
             record.scale = cubeItem->scale();
             record.selected = cubeItem->isSelected();
+            record.baseColor = cubeItem->baseColor();
+            record.emissiveColor = cubeItem->emissiveColor();
             record.firstMesh = beforeCount;
             record.meshCount = meshCount;
 
@@ -311,6 +326,8 @@ public:
                 mesh.modelMatrix = transform * mesh.baseModelMatrix;
                 mesh.userOffset = record.position;
                 mesh.selected = record.selected;
+                mesh.material.baseColor = record.baseColor;
+                mesh.material.emissive = record.emissiveColor;
             }
             m_qmlCubes.push_back(record);
         }
@@ -348,6 +365,8 @@ public:
         m_scene.setAmbientIntensity(1.0f);
         m_scene.setSmokeAmount(qmlItem->smokeAmount());
         m_scene.setBeamModel(static_cast<Scene::BeamModel>(qmlItem->beamModel()));
+        m_scene.setBloomIntensity(qmlItem->bloomIntensity());
+        m_scene.setBloomRadius(qmlItem->bloomRadius());
     }
 
     void render(QRhiCommandBuffer *cb) override
@@ -393,6 +412,8 @@ private:
         QVector3D position;
         QVector3D rotationDegrees;
         QVector3D scale;
+        QVector3D baseColor;
+        QVector3D emissiveColor;
         bool selected = false;
         int firstMesh = 0;
         int meshCount = 0;
@@ -495,6 +516,24 @@ void RhiQmlItem::setBeamModel(BeamModel mode)
         return;
     m_beamModel = mode;
     emit beamModelChanged();
+    update();
+}
+
+void RhiQmlItem::setBloomIntensity(float intensity)
+{
+    if (qFuzzyCompare(m_bloomIntensity, intensity))
+        return;
+    m_bloomIntensity = intensity;
+    emit bloomIntensityChanged();
+    update();
+}
+
+void RhiQmlItem::setBloomRadius(float radius)
+{
+    if (qFuzzyCompare(m_bloomRadius, radius))
+        return;
+    m_bloomRadius = radius;
+    emit bloomRadiusChanged();
     update();
 }
 

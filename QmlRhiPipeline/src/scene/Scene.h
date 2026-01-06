@@ -106,6 +106,22 @@ public:
     {
         m_beamModel = mode;
     }
+    float bloomIntensity() const
+    {
+        return m_bloomIntensity;
+    }
+    void setBloomIntensity(float intensity)
+    {
+        m_bloomIntensity = intensity;
+    }
+    float bloomRadius() const
+    {
+        return m_bloomRadius;
+    }
+    void setBloomRadius(float radius)
+    {
+        m_bloomRadius = radius;
+    }
 
 private:
     Camera m_camera;
@@ -115,4 +131,6 @@ private:
     float m_ambientIntensity = 1.0f;
     float m_smokeAmount = 0.0f;
     BeamModel m_beamModel = BeamModel::SoftHaze;
+    float m_bloomIntensity = 0.0f;
+    float m_bloomRadius = 4.0f;
 };

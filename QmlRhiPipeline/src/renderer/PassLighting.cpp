@@ -136,8 +136,12 @@ void PassLighting::execute(FrameContext &ctx)
     if (!ctx.scene || !m_pipeline || !m_srb)
         return;
     QRhiCommandBuffer *cb = ctx.rhi->commandBuffer();
-    QRhiRenderTarget *rt = ctx.rhi->swapchainRenderTarget();
-    if (!cb || !rt)
+    QRhiRenderTarget *swapRt = ctx.rhi->swapchainRenderTarget();
+    if (!cb || !swapRt)
+        return;
+    const RenderTargetCache::LightingTargets lighting = ctx.targets->getOrCreateLightingTarget(swapRt->pixelSize(), 1);
+    QRhiRenderTarget *rt = lighting.rt;
+    if (!rt)
         return;
 
     struct LightsData
@@ -157,8 +161,8 @@ void PassLighting::execute(FrameContext &ctx)
     lightData.lightCount = QVector4D(float(maxLights), ambient.x(), ambient.y(), ambient.z());
     lightData.lightParams = QVector4D(ctx.scene->smokeAmount(),
                                       float(static_cast<int>(ctx.scene->beamModel())),
-                                      0.0f,
-                                      0.0f);
+                                      ctx.scene->bloomIntensity(),
+                                      ctx.scene->bloomRadius());
     for (int i = 0; i < maxLights; ++i)
     {
         const Light &l = ctx.scene->lights()[i];
@@ -391,6 +395,7 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     const bool gbufChanged = gbuf.color0 != m_gbufColor0 ||
                              gbuf.color1 != m_gbufColor1 ||
                              gbuf.color2 != m_gbufColor2 ||
+                             gbuf.color3 != m_gbufColor3 ||
                              gbuf.depth != m_gbufDepth;
     const bool reverseZ = ctx.rhi->rhi()->clipSpaceCorrMatrix()(2, 2) < 0.0f;
     bool spotChanged = false;
@@ -498,7 +503,7 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     if (!m_lightsUbo->create() || !m_cameraUbo->create() || !m_shadowUbo->create() || !m_flipUbo->create())
         return;
 
-    if (!gbuf.color0 || !gbuf.color1 || !gbuf.color2)
+    if (!gbuf.color0 || !gbuf.color1 || !gbuf.color2 || !gbuf.color3)
     {
         qWarning() << "PassLighting: missing GBuffer textures";
         return;
@@ -506,6 +511,7 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     m_gbufColor0 = gbuf.color0;
     m_gbufColor1 = gbuf.color1;
     m_gbufColor2 = gbuf.color2;
+    m_gbufColor3 = gbuf.color3;
     m_gbufDepth = gbuf.depth;
     m_gbufWorldPosFloat = (gbuf.colorFormat == QRhiTexture::RGBA16F
                            || gbuf.colorFormat == QRhiTexture::RGBA32F);
@@ -531,6 +537,7 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
         QRhiShaderResourceBinding::sampledTexture(0, QRhiShaderResourceBinding::FragmentStage, gbuf.color0, m_sampler),
         QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, gbuf.color1, m_sampler),
         QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, gbuf.color2, m_sampler),
+        QRhiShaderResourceBinding::sampledTexture(20, QRhiShaderResourceBinding::FragmentStage, gbuf.color3, m_sampler),
         QRhiShaderResourceBinding::uniformBuffer(3, QRhiShaderResourceBinding::FragmentStage, m_lightsUbo),
         QRhiShaderResourceBinding::uniformBuffer(4, QRhiShaderResourceBinding::FragmentStage, m_cameraUbo),
         QRhiShaderResourceBinding::uniformBuffer(5, QRhiShaderResourceBinding::FragmentStage, m_shadowUbo),

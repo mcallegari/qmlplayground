@@ -19,6 +19,8 @@ class RhiQmlItem : public QQuickRhiItem
     Q_PROPERTY(float ambientIntensity READ ambientIntensity WRITE setAmbientIntensity NOTIFY ambientIntensityChanged)
     Q_PROPERTY(float smokeAmount READ smokeAmount WRITE setSmokeAmount NOTIFY smokeAmountChanged)
     Q_PROPERTY(BeamModel beamModel READ beamModel WRITE setBeamModel NOTIFY beamModelChanged)
+    Q_PROPERTY(float bloomIntensity READ bloomIntensity WRITE setBloomIntensity NOTIFY bloomIntensityChanged)
+    Q_PROPERTY(float bloomRadius READ bloomRadius WRITE setBloomRadius NOTIFY bloomRadiusChanged)
     Q_PROPERTY(bool freeCameraEnabled READ freeCameraEnabled WRITE setFreeCameraEnabled NOTIFY freeCameraEnabledChanged)
     Q_PROPERTY(float moveSpeed READ moveSpeed WRITE setMoveSpeed NOTIFY moveSpeedChanged)
     Q_PROPERTY(float lookSensitivity READ lookSensitivity WRITE setLookSensitivity NOTIFY lookSensitivityChanged)
@@ -50,6 +52,10 @@ public:
     void setSmokeAmount(float amount);
     BeamModel beamModel() const { return m_beamModel; }
     void setBeamModel(BeamModel mode);
+    float bloomIntensity() const { return m_bloomIntensity; }
+    void setBloomIntensity(float intensity);
+    float bloomRadius() const { return m_bloomRadius; }
+    void setBloomRadius(float radius);
     bool freeCameraEnabled() const { return m_freeCameraEnabled; }
     void setFreeCameraEnabled(bool enabled);
     float moveSpeed() const { return m_moveSpeed; }
@@ -100,6 +106,8 @@ Q_SIGNALS:
     void ambientIntensityChanged();
     void smokeAmountChanged();
     void beamModelChanged();
+    void bloomIntensityChanged();
+    void bloomRadiusChanged();
     void freeCameraEnabledChanged();
     void moveSpeedChanged();
     void lookSensitivityChanged();
@@ -125,6 +133,8 @@ private:
     float m_ambientIntensity = 1.0f;
     float m_smokeAmount = 0.0f;
     BeamModel m_beamModel = SoftHaze;
+    float m_bloomIntensity = 0.6f;
+    float m_bloomRadius = 6.0f;
     bool m_freeCameraEnabled = false;
     float m_moveSpeed = 5.0f;
     float m_lookSensitivity = 0.2f;

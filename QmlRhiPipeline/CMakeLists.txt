@@ -54,6 +54,9 @@ qt_add_shaders(qmlrhipipeline qmlrhipipeline_shaders
         shaders/gbuffer.frag
         shaders/lighting.vert
         shaders/lighting.frag
+        shaders/post_bloom_downsample.frag
+        shaders/post_bloom_upsample.frag
+        shaders/post_combine.frag
         shaders/selection_box.vert
         shaders/selection_box.frag
         shaders/shadow.vert

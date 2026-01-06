@@ -43,6 +43,24 @@ void CubeItem::setIsSelected(bool selected)
     notifyParent();
 }
 
+void CubeItem::setBaseColor(const QVector3D &color)
+{
+    if (m_baseColor == color)
+        return;
+    m_baseColor = color;
+    emit baseColorChanged();
+    notifyParent();
+}
+
+void CubeItem::setEmissiveColor(const QVector3D &color)
+{
+    if (m_emissiveColor == color)
+        return;
+    m_emissiveColor = color;
+    emit emissiveColorChanged();
+    notifyParent();
+}
+
 void CubeItem::notifyParent()
 {
     auto *item = qobject_cast<QQuickItem *>(parent());

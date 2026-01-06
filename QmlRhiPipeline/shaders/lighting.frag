@@ -8,6 +8,7 @@ layout(location = 0) out vec4 outColor;
 layout(binding = 0) uniform sampler2D gbuf0;
 layout(binding = 1) uniform sampler2D gbuf1;
 layout(binding = 2) uniform sampler2D gbuf2;
+layout(binding = 20) uniform sampler2D gbufEmissive;
 
 layout(std140, binding = 3) uniform LightsUbo {
     vec4 lightCount;
@@ -209,6 +210,7 @@ void main()
 
     vec3 baseColor = texture(gbuf0, uvSample).rgb;
     float metalness = texture(gbuf0, uvSample).a;
+    vec3 emissive = texture(gbufEmissive, uvSample).rgb;
 
     vec3 N = decodeNormal(texture(gbuf1, uvSample).rgb);
     float roughness = texture(gbuf1, uvSample).a;
@@ -511,6 +513,7 @@ void main()
             beam += ci.xyz * ci.w * density * stepLen * gobo;
         }
     }
+    color += emissive;
     color += beam * 0.06;
     outColor = vec4(color, 1.0);
 }

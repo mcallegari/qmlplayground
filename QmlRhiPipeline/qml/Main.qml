@@ -1,8 +1,10 @@
 import QtQuick 2.15
 import QtQuick.Window 2.15
+import QtQml 2.15
 import RhiQmlItem 1.0
 
 Window {
+    id: root
     width: 1280
     height: 720
     visible: true
@@ -10,13 +12,33 @@ Window {
 
     property real meshStep: 0.25
     property vector3d cubePos: Qt.vector3d(0, 0, 0)
+    property var ledColors: [
+        Qt.vector3d(1.0, 0.1, 0.1),
+        Qt.vector3d(1.0, 0.4, 0.1),
+        Qt.vector3d(1.0, 0.8, 0.1),
+        Qt.vector3d(0.8, 1.0, 0.1),
+        Qt.vector3d(0.1, 1.0, 0.1),
+        Qt.vector3d(0.1, 1.0, 0.8),
+        Qt.vector3d(0.1, 0.6, 1.0),
+        Qt.vector3d(0.1, 0.2, 1.0),
+        Qt.vector3d(0.4, 0.1, 1.0),
+        Qt.vector3d(0.8, 0.1, 1.0),
+        Qt.vector3d(1.0, 0.1, 0.6),
+        Qt.vector3d(1.0, 0.1, 0.3)
+    ]
+
+    function scaleColor(c, s) {
+        return Qt.vector3d(c.x * s, c.y * s, c.z * s)
+    }
     RhiQmlItem {
         id: renderer
         anchors.fill: parent
         focus: true
         freeCameraEnabled: true
         smokeAmount: 0.8 // 0-1 range
-        beamModel: Scene.Physical // soft haze (fast fade), physically‑motivated (inverse‑square + exponential
+        beamModel: Scene.SoftHaze // soft haze (fast fade), physically‑motivated (inverse‑square + exponential
+        bloomIntensity: 2.0
+        bloomRadius: 2.0
         moveSpeed: 5.0
         lookSensitivity: 0.2
 
@@ -76,7 +98,18 @@ Window {
             intensity: 1.0
             castShadows: false
         }
-
+/*
+        Light {
+            type: Light.Area
+            position: Qt.vector3d(0, 0.1, 3)
+            direction: Qt.vector3d(0, 0, 1)
+            color: Qt.vector3d(0.9, 0.9, 0.8)
+            intensity: 2.0
+            range: 30.0
+            size: Qt.size(3.0, 2.0)
+            castShadows: false
+        }
+*/
         Light {
             type: Light.Spotlight
             position: Qt.vector3d(-1, 5, 0)
@@ -119,6 +152,18 @@ Window {
             castShadows: true
             beamShape: Light.BeamShape
             beamRadius: 0.3
+        }
+
+        Instantiator {
+            model: 12
+            delegate: Cube {
+                property vector3d ledColor: root.ledColors[index % root.ledColors.length]
+                position: Qt.vector3d(0 + index * 0.42, -2.2, 2.5)
+                rotationDegrees: Qt.vector3d(90, 0, 0)
+                scale: Qt.vector3d(0.4, 0.02, 0.2)
+                baseColor: ledColor
+                emissiveColor: root.scaleColor(ledColor, 3.0)
+            }
         }
 
         Cube {
