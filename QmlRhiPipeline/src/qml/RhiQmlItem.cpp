@@ -4,6 +4,7 @@
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QTimer>
 #include <QtCore/QMetaObject>
+#include <QtCore/QVariant>
 #include <QtMath>
 #include <memory>
 #include <QtGui/QMatrix4x4>
@@ -32,6 +33,49 @@ struct PickHit
     QVector3D worldPos;
     float distance = std::numeric_limits<float>::max();
 };
+
+enum class PickFilter
+{
+    SelectableOnly,
+    GizmosOnly
+};
+
+bool computeRay(const Scene &scene, QRhi *rhi, const QPointF &normPos,
+                QVector3D &origin, QVector3D &dir)
+{
+    if (!rhi)
+        return false;
+
+    QMatrix4x4 viewProj = rhi->clipSpaceCorrMatrix()
+            * scene.camera().projectionMatrix()
+            * scene.camera().viewMatrix();
+    bool invertible = false;
+    const QMatrix4x4 invViewProj = viewProj.inverted(&invertible);
+    if (!invertible)
+        return false;
+
+    const float x = (2.0f * float(normPos.x()) - 1.0f);
+    const float y = 1.0f - (2.0f * float(normPos.y()));
+    const float zNear = rhi->isClipDepthZeroToOne() ? 0.0f : -1.0f;
+    const float zFar = 1.0f;
+
+    QVector4D nearClip(x, y, zNear, 1.0f);
+    QVector4D farClip(x, y, zFar, 1.0f);
+    QVector4D nearWorld = invViewProj * nearClip;
+    QVector4D farWorld = invViewProj * farClip;
+    if (qFuzzyIsNull(nearWorld.w()) || qFuzzyIsNull(farWorld.w()))
+        return false;
+
+    nearWorld /= nearWorld.w();
+    farWorld /= farWorld.w();
+
+    origin = nearWorld.toVector3D();
+    dir = (farWorld - nearWorld).toVector3D().normalized();
+    if (dir.isNull())
+        return false;
+
+    return true;
+}
 
 bool rayAabbIntersection(const QVector3D &origin, const QVector3D &dir,
                          const QVector3D &minV, const QVector3D &maxV,
@@ -93,6 +137,21 @@ bool rayTriangleIntersection(const QVector3D &origin, const QVector3D &dir,
     return true;
 }
 
+float closestAxisT(const QVector3D &rayOrigin, const QVector3D &rayDir,
+                   const QVector3D &axisOrigin, const QVector3D &axisDir)
+{
+    const float a = QVector3D::dotProduct(rayDir, rayDir);
+    const float b = QVector3D::dotProduct(rayDir, axisDir);
+    const float c = QVector3D::dotProduct(axisDir, axisDir);
+    const QVector3D w0 = rayOrigin - axisOrigin;
+    const float d = QVector3D::dotProduct(rayDir, w0);
+    const float e = QVector3D::dotProduct(axisDir, w0);
+    const float denom = a * c - b * b;
+    if (qFuzzyIsNull(denom))
+        return -e / c;
+    return (a * e - b * d) / denom;
+}
+
 Mesh createUnitCubeMesh()
 {
     Mesh mesh;
@@ -146,43 +205,22 @@ Mesh createUnitCubeMesh()
     return mesh;
 }
 
-bool pickSceneMesh(const Scene &scene, QRhi *rhi, const QPointF &normPos, PickHit &hit)
+bool pickSceneMesh(const Scene &scene, QRhi *rhi, const QPointF &normPos,
+                   PickFilter filter, PickHit &hit)
 {
-    if (!rhi)
-        return false;
-
-    QMatrix4x4 viewProj = rhi->clipSpaceCorrMatrix()
-            * scene.camera().projectionMatrix()
-            * scene.camera().viewMatrix();
-    bool invertible = false;
-    const QMatrix4x4 invViewProj = viewProj.inverted(&invertible);
-    if (!invertible)
-        return false;
-
-    const float x = (2.0f * float(normPos.x()) - 1.0f);
-    const float y = 1.0f - (2.0f * float(normPos.y()));
-    const float zNear = rhi->isClipDepthZeroToOne() ? 0.0f : -1.0f;
-    const float zFar = 1.0f;
-
-    QVector4D nearClip(x, y, zNear, 1.0f);
-    QVector4D farClip(x, y, zFar, 1.0f);
-    QVector4D nearWorld = invViewProj * nearClip;
-    QVector4D farWorld = invViewProj * farClip;
-    if (qFuzzyIsNull(nearWorld.w()) || qFuzzyIsNull(farWorld.w()))
-        return false;
-
-    nearWorld /= nearWorld.w();
-    farWorld /= farWorld.w();
-
-    const QVector3D origin = nearWorld.toVector3D();
-    const QVector3D dir = (farWorld - nearWorld).toVector3D().normalized();
-    if (dir.isNull())
+    QVector3D origin;
+    QVector3D dir;
+    if (!computeRay(scene, rhi, normPos, origin, dir))
         return false;
 
     const auto &meshes = scene.meshes();
     for (int meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
     {
         const Mesh &mesh = meshes[meshIndex];
+        if (filter == PickFilter::SelectableOnly && !mesh.selectable)
+            continue;
+        if (filter == PickFilter::GizmosOnly && mesh.gizmoAxis < 0)
+            continue;
         if (mesh.vertices.isEmpty())
             continue;
 
@@ -269,6 +307,13 @@ bool pickSceneMesh(const Scene &scene, QRhi *rhi, const QPointF &normPos, PickHi
 class RhiQmlItemRenderer final : public QQuickRhiItemRenderer
 {
 public:
+    enum DragType
+    {
+        DragBegin = 0,
+        DragMove = 1,
+        DragEnd = 2
+    };
+
     void initialize(QRhiCommandBuffer *cb) override
     {
         Q_UNUSED(cb);
@@ -574,14 +619,89 @@ public:
             m_scene.setHazeDensity(0.0f);
         }
 
+        QObject *selectedItem = qmlItem->selectedItem();
+        QVector3D selectedPos;
+        bool hasSelected = false;
+        if (selectedItem)
+        {
+            const QVariant posVar = selectedItem->property("position");
+            if (posVar.isValid() && posVar.canConvert<QVector3D>())
+            {
+                selectedPos = posVar.value<QVector3D>();
+                hasSelected = true;
+            }
+        }
+
+        ensureGizmoMeshes();
+
+        bool skipPick = false;
+        QVector<RhiQmlItem::DragRequest> drags;
+        qmlItem->takePendingDragRequests(drags);
+        for (const auto &drag : drags)
+        {
+            if (drag.type == DragBegin && hasSelected)
+            {
+                PickHit gizmoHit;
+                const bool hitOk = pickSceneMesh(m_scene, m_rhiContext.rhi(), drag.normPos,
+                                                 PickFilter::GizmosOnly, gizmoHit);
+                if (hitOk)
+                {
+                    const Mesh &mesh = m_scene.meshes()[gizmoHit.meshIndex];
+                    if (mesh.gizmoAxis >= 0)
+                    {
+                        const QVector3D axisDir = axisVector(mesh.gizmoAxis);
+                        QVector3D rayOrigin;
+                        QVector3D rayDir;
+                        if (computeRay(m_scene, m_rhiContext.rhi(), drag.normPos, rayOrigin, rayDir))
+                        {
+                            m_axisDragActive = true;
+                            m_axisDrag = mesh.gizmoAxis;
+                            m_dragItem = selectedItem;
+                            m_dragOrigin = selectedPos;
+                            m_dragStartPos = selectedPos;
+                            m_dragStartT = closestAxisT(rayOrigin, rayDir, selectedPos, axisDir);
+                            skipPick = true;
+                        }
+                    }
+                }
+            }
+            else if (drag.type == DragMove && m_axisDragActive && m_dragItem)
+            {
+                const QVector3D axisDir = axisVector(m_axisDrag);
+                QVector3D rayOrigin;
+                QVector3D rayDir;
+                if (computeRay(m_scene, m_rhiContext.rhi(), drag.normPos, rayOrigin, rayDir))
+                {
+                    const float t = closestAxisT(rayOrigin, rayDir, m_dragOrigin, axisDir);
+                    const float delta = t - m_dragStartT;
+                    const QVector3D newPos = m_dragStartPos + axisDir * delta;
+                    selectedPos = newPos;
+                    hasSelected = true;
+                    QMetaObject::invokeMethod(qmlItem, "setObjectPosition", Qt::QueuedConnection,
+                                              Q_ARG(QObject *, m_dragItem),
+                                              Q_ARG(QVector3D, newPos));
+                }
+            }
+            else if (drag.type == DragEnd)
+            {
+                m_axisDragActive = false;
+                m_axisDrag = -1;
+                m_dragItem = nullptr;
+            }
+        }
+
+        updateGizmoMeshes(hasSelected ? selectedPos : QVector3D(),
+                          m_scene.camera().position(), hasSelected);
+
         QVector<RhiQmlItem::PickRequest> picks;
         qmlItem->takePendingPickRequests(picks);
-        if (!picks.isEmpty())
+        if (!picks.isEmpty() && !skipPick)
         {
             for (const auto &pick : picks)
             {
                 PickHit hit;
-                const bool hitOk = pickSceneMesh(m_scene, m_rhiContext.rhi(), pick.normPos, hit);
+                const bool hitOk = pickSceneMesh(m_scene, m_rhiContext.rhi(), pick.normPos,
+                                                 PickFilter::SelectableOnly, hit);
 
                 QObject *hitItem = nullptr;
                 if (hitOk)
@@ -667,6 +787,102 @@ private:
         int meshCount = 0;
     };
     QVector<CubeRecord> m_qmlCubes;
+    struct GizmoPart
+    {
+        int meshIndex = -1;
+        int axis = -1;
+    };
+    QVector<GizmoPart> m_gizmoParts;
+    bool m_axisDragActive = false;
+    int m_axisDrag = -1;
+    QVector3D m_dragOrigin;
+    QVector3D m_dragStartPos;
+    float m_dragStartT = 0.0f;
+    QObject *m_dragItem = nullptr;
+
+    QVector3D axisVector(int axis) const
+    {
+        switch (axis)
+        {
+        case 0: return QVector3D(1.0f, 0.0f, 0.0f);
+        case 1: return QVector3D(0.0f, 1.0f, 0.0f);
+        case 2: return QVector3D(0.0f, 0.0f, 1.0f);
+        default: return QVector3D(0.0f, 0.0f, 0.0f);
+        }
+    }
+
+    void ensureGizmoMeshes()
+    {
+        if (!m_gizmoParts.isEmpty())
+            return;
+        const QVector3D colors[3] = {
+            QVector3D(1.0f, 0.1f, 0.1f),
+            QVector3D(0.1f, 1.0f, 0.1f),
+            QVector3D(0.1f, 0.3f, 1.0f)
+        };
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            for (int part = 0; part < 2; ++part)
+            {
+                Mesh mesh = createUnitCubeMesh();
+                mesh.selectable = false;
+                mesh.gizmoAxis = axis;
+                mesh.material.baseColor = colors[axis];
+                mesh.material.emissive = colors[axis] * 2.0f;
+                const int meshIndex = m_scene.meshes().size();
+                m_scene.meshes().push_back(mesh);
+                m_gizmoParts.push_back({ meshIndex, axis });
+            }
+        }
+    }
+
+    void updateGizmoMeshes(const QVector3D &pos, const QVector3D &cameraPos, bool visible)
+    {
+        const float distance = (cameraPos - pos).length();
+        const float axisLength = qMax(0.2f, distance * 0.2f);
+        const float shaftRadius = axisLength * 0.05f;
+        const float headLength = axisLength * 0.25f;
+        const float headRadius = axisLength * 0.1f;
+
+        int partIndex = 0;
+        for (int axis = 0; axis < 3; ++axis)
+        {
+            const QVector3D dir = axisVector(axis);
+
+            Mesh &shaft = m_scene.meshes()[m_gizmoParts[partIndex++].meshIndex];
+            Mesh &head = m_scene.meshes()[m_gizmoParts[partIndex++].meshIndex];
+
+            if (!visible)
+            {
+                QMatrix4x4 hidden;
+                hidden.setToIdentity();
+                hidden.scale(0.0f);
+                shaft.modelMatrix = hidden;
+                head.modelMatrix = hidden;
+                continue;
+            }
+
+            QMatrix4x4 shaftM;
+            shaftM.translate(pos + dir * (axisLength * 0.5f));
+            if (axis == 0)
+                shaftM.scale(axisLength, shaftRadius, shaftRadius);
+            else if (axis == 1)
+                shaftM.scale(shaftRadius, axisLength, shaftRadius);
+            else
+                shaftM.scale(shaftRadius, shaftRadius, axisLength);
+            shaft.modelMatrix = shaftM;
+
+            QMatrix4x4 headM;
+            headM.translate(pos + dir * (axisLength + headLength * 0.5f));
+            if (axis == 0)
+                headM.scale(headLength, headRadius, headRadius);
+            else if (axis == 1)
+                headM.scale(headRadius, headLength, headRadius);
+            else
+                headM.scale(headRadius, headRadius, headLength);
+            head.modelMatrix = headM;
+        }
+    }
 };
 
 } // namespace
@@ -870,8 +1086,10 @@ void RhiQmlItem::mousePressEvent(QMouseEvent *event)
             const QPointF pos = event->position();
             const QPointF normPos(pos.x() / w, pos.y() / h);
             m_pendingPickRequests.push_back({ normPos, event->modifiers() });
+            m_pendingDragRequests.push_back({ normPos, 0 });
             update();
         }
+        m_leftDown = true;
         event->accept();
         return;
     }
@@ -888,6 +1106,21 @@ void RhiQmlItem::mousePressEvent(QMouseEvent *event)
 
 void RhiQmlItem::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton)
+    {
+        const float w = width();
+        const float h = height();
+        if (w > 0.0f && h > 0.0f)
+        {
+            const QPointF pos = event->position();
+            const QPointF normPos(pos.x() / w, pos.y() / h);
+            m_pendingDragRequests.push_back({ normPos, 2 });
+            update();
+        }
+        m_leftDown = false;
+        event->accept();
+        return;
+    }
     if (!m_freeCameraEnabled || event->button() != Qt::RightButton)
     {
         QQuickRhiItem::mouseReleaseEvent(event);
@@ -899,6 +1132,18 @@ void RhiQmlItem::mouseReleaseEvent(QMouseEvent *event)
 
 void RhiQmlItem::mouseMoveEvent(QMouseEvent *event)
 {
+    if (m_leftDown)
+    {
+        const float w = width();
+        const float h = height();
+        if (w > 0.0f && h > 0.0f)
+        {
+            const QPointF pos = event->position();
+            const QPointF normPos(pos.x() / w, pos.y() / h);
+            m_pendingDragRequests.push_back({ normPos, 1 });
+            update();
+        }
+    }
     if (!m_freeCameraEnabled || !m_looking)
     {
         QQuickRhiItem::mouseMoveEvent(event);
@@ -1085,9 +1330,53 @@ void RhiQmlItem::takePendingPickRequests(QVector<PickRequest> &out)
     m_pendingPickRequests.clear();
 }
 
+void RhiQmlItem::takePendingDragRequests(QVector<DragRequest> &out)
+{
+    out = std::move(m_pendingDragRequests);
+    m_pendingDragRequests.clear();
+}
+
 void RhiQmlItem::dispatchPickResult(QObject *item, const QVector3D &worldPos, bool hit)
 {
     emit meshPicked(item, worldPos, hit);
+}
+
+void RhiQmlItem::setCameraDirection(const QVector3D &dir)
+{
+    if (dir.isNull())
+        return;
+    updateYawPitchFromDirection(dir);
+    m_cameraTarget = m_cameraPosition + forwardVector();
+    emit cameraTargetChanged();
+    update();
+}
+
+void RhiQmlItem::rotateFreeCamera(float yawDelta, float pitchDelta)
+{
+    if (!m_freeCameraEnabled)
+        return;
+    m_yawDeg += yawDelta;
+    m_pitchDeg += pitchDelta;
+    m_pitchDeg = qBound(-89.0f, m_pitchDeg, 89.0f);
+    const QVector3D fwd = forwardVector();
+    m_cameraTarget = m_cameraPosition + fwd;
+    emit cameraTargetChanged();
+    update();
+}
+
+void RhiQmlItem::setSelectedItem(QObject *item)
+{
+    if (m_selectedItem == item)
+        return;
+    m_selectedItem = item;
+    emit selectedItemChanged();
+}
+
+void RhiQmlItem::setObjectPosition(QObject *item, const QVector3D &pos)
+{
+    if (!item)
+        return;
+    item->setProperty("position", QVariant::fromValue(pos));
 }
 
 QQuickRhiItemRenderer *RhiQmlItem::createRenderer()

@@ -56,4 +56,5 @@ private:
     QRhiRenderPassDescriptor *m_selectionRpDesc = nullptr;
     int m_selectionMaxVertices = 0;
 
+
 };

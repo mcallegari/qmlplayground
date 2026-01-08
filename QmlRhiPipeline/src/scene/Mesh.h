@@ -34,5 +34,7 @@ struct Mesh
     QVector3D boundsMax = QVector3D(0.0f, 0.0f, 0.0f);
     bool boundsValid = false;
     bool selected = false;
+    bool selectable = true;
+    int gizmoAxis = -1;
     Material material;
 };

@@ -105,7 +105,19 @@ public:
         Qt::KeyboardModifiers modifiers = Qt::NoModifier;
     };
     void takePendingPickRequests(QVector<PickRequest> &out);
+    struct DragRequest
+    {
+        QPointF normPos;
+        int type = 0;
+    };
+    void takePendingDragRequests(QVector<DragRequest> &out);
     Q_INVOKABLE void dispatchPickResult(QObject *item, const QVector3D &worldPos, bool hit);
+    Q_INVOKABLE void setCameraDirection(const QVector3D &dir);
+    Q_INVOKABLE void rotateFreeCamera(float yawDelta, float pitchDelta);
+    Q_PROPERTY(QObject *selectedItem READ selectedItem WRITE setSelectedItem NOTIFY selectedItemChanged)
+    QObject *selectedItem() const { return m_selectedItem; }
+    void setSelectedItem(QObject *item);
+    Q_INVOKABLE void setObjectPosition(QObject *item, const QVector3D &pos);
 
 Q_SIGNALS:
     void cameraPositionChanged();
@@ -121,6 +133,7 @@ Q_SIGNALS:
     void moveSpeedChanged();
     void lookSensitivityChanged();
     void meshPicked(QObject *item, const QVector3D &worldPos, bool hit);
+    void selectedItemChanged();
 
 protected:
     QQuickRhiItemRenderer *createRenderer() override;
@@ -162,4 +175,7 @@ private:
     QVector<PendingModel> m_pendingModels;
     QVector<Light> m_pendingLights;
     QVector<PickRequest> m_pendingPickRequests;
+    QVector<DragRequest> m_pendingDragRequests;
+    QObject *m_selectedItem = nullptr;
+    bool m_leftDown = false;
 };
