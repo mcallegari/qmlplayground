@@ -6,6 +6,8 @@
 #include <QtCore/QVector>
 #include <QtCore/QString>
 #include <QtCore/QSizeF>
+#include <QtCore/QPointF>
+#include <QtCore/Qt>
 
 #include "scene/Scene.h"
 
@@ -97,6 +99,13 @@ public:
     };
     void takePendingModels(QVector<PendingModel> &out);
     void takePendingLights(QVector<Light> &out);
+    struct PickRequest
+    {
+        QPointF normPos;
+        Qt::KeyboardModifiers modifiers = Qt::NoModifier;
+    };
+    void takePendingPickRequests(QVector<PickRequest> &out);
+    Q_INVOKABLE void dispatchPickResult(QObject *item, const QVector3D &worldPos, bool hit);
 
 Q_SIGNALS:
     void cameraPositionChanged();
@@ -111,6 +120,7 @@ Q_SIGNALS:
     void freeCameraEnabledChanged();
     void moveSpeedChanged();
     void lookSensitivityChanged();
+    void meshPicked(QObject *item, const QVector3D &worldPos, bool hit);
 
 protected:
     QQuickRhiItemRenderer *createRenderer() override;
@@ -151,4 +161,5 @@ private:
 
     QVector<PendingModel> m_pendingModels;
     QVector<Light> m_pendingLights;
+    QVector<PickRequest> m_pendingPickRequests;
 };

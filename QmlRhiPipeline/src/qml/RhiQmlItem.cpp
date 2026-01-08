@@ -3,12 +3,14 @@
 #include <QtCore/QDebug>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QTimer>
+#include <QtCore/QMetaObject>
 #include <QtMath>
 #include <memory>
 #include <QtGui/QMatrix4x4>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QQuaternion>
 #include <QtGui/QKeyEvent>
+#include <limits>
 
 #include "core/RhiContext.h"
 #include "core/RenderTargetCache.h"
@@ -23,6 +25,73 @@
 
 namespace
 {
+
+struct PickHit
+{
+    int meshIndex = -1;
+    QVector3D worldPos;
+    float distance = std::numeric_limits<float>::max();
+};
+
+bool rayAabbIntersection(const QVector3D &origin, const QVector3D &dir,
+                         const QVector3D &minV, const QVector3D &maxV,
+                         float &tNear, float &tFar)
+{
+    tNear = 0.0f;
+    tFar = std::numeric_limits<float>::max();
+
+    for (int axis = 0; axis < 3; ++axis)
+    {
+        const float o = axis == 0 ? origin.x() : (axis == 1 ? origin.y() : origin.z());
+        const float d = axis == 0 ? dir.x() : (axis == 1 ? dir.y() : dir.z());
+        const float minA = axis == 0 ? minV.x() : (axis == 1 ? minV.y() : minV.z());
+        const float maxA = axis == 0 ? maxV.x() : (axis == 1 ? maxV.y() : maxV.z());
+
+        if (qFuzzyIsNull(d))
+        {
+            if (o < minA || o > maxA)
+                return false;
+            continue;
+        }
+
+        float t1 = (minA - o) / d;
+        float t2 = (maxA - o) / d;
+        if (t1 > t2)
+            std::swap(t1, t2);
+        tNear = qMax(tNear, t1);
+        tFar = qMin(tFar, t2);
+        if (tNear > tFar)
+            return false;
+    }
+    return tFar >= 0.0f;
+}
+
+bool rayTriangleIntersection(const QVector3D &origin, const QVector3D &dir,
+                             const QVector3D &v0, const QVector3D &v1, const QVector3D &v2,
+                             float &tOut)
+{
+    const float eps = 1e-6f;
+    const QVector3D e1 = v1 - v0;
+    const QVector3D e2 = v2 - v0;
+    const QVector3D p = QVector3D::crossProduct(dir, e2);
+    const float det = QVector3D::dotProduct(e1, p);
+    if (qAbs(det) < eps)
+        return false;
+    const float invDet = 1.0f / det;
+    const QVector3D t = origin - v0;
+    const float u = QVector3D::dotProduct(t, p) * invDet;
+    if (u < 0.0f || u > 1.0f)
+        return false;
+    const QVector3D q = QVector3D::crossProduct(t, e1);
+    const float v = QVector3D::dotProduct(dir, q) * invDet;
+    if (v < 0.0f || (u + v) > 1.0f)
+        return false;
+    const float tHit = QVector3D::dotProduct(e2, q) * invDet;
+    if (tHit <= eps)
+        return false;
+    tOut = tHit;
+    return true;
+}
 
 Mesh createUnitCubeMesh()
 {
@@ -75,6 +144,126 @@ Mesh createUnitCubeMesh()
     mesh.boundsMax = QVector3D(h, h, h);
     mesh.boundsValid = true;
     return mesh;
+}
+
+bool pickSceneMesh(const Scene &scene, QRhi *rhi, const QPointF &normPos, PickHit &hit)
+{
+    if (!rhi)
+        return false;
+
+    QMatrix4x4 viewProj = rhi->clipSpaceCorrMatrix()
+            * scene.camera().projectionMatrix()
+            * scene.camera().viewMatrix();
+    bool invertible = false;
+    const QMatrix4x4 invViewProj = viewProj.inverted(&invertible);
+    if (!invertible)
+        return false;
+
+    const float x = (2.0f * float(normPos.x()) - 1.0f);
+    const float y = 1.0f - (2.0f * float(normPos.y()));
+    const float zNear = rhi->isClipDepthZeroToOne() ? 0.0f : -1.0f;
+    const float zFar = 1.0f;
+
+    QVector4D nearClip(x, y, zNear, 1.0f);
+    QVector4D farClip(x, y, zFar, 1.0f);
+    QVector4D nearWorld = invViewProj * nearClip;
+    QVector4D farWorld = invViewProj * farClip;
+    if (qFuzzyIsNull(nearWorld.w()) || qFuzzyIsNull(farWorld.w()))
+        return false;
+
+    nearWorld /= nearWorld.w();
+    farWorld /= farWorld.w();
+
+    const QVector3D origin = nearWorld.toVector3D();
+    const QVector3D dir = (farWorld - nearWorld).toVector3D().normalized();
+    if (dir.isNull())
+        return false;
+
+    const auto &meshes = scene.meshes();
+    for (int meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
+    {
+        const Mesh &mesh = meshes[meshIndex];
+        if (mesh.vertices.isEmpty())
+            continue;
+
+        bool invOk = false;
+        const QMatrix4x4 invModel = mesh.modelMatrix.inverted(&invOk);
+        if (!invOk)
+            continue;
+
+        const QVector3D originLocal = (invModel * QVector4D(origin, 1.0f)).toVector3D();
+        QVector3D dirLocal = (invModel * QVector4D(dir, 0.0f)).toVector3D();
+        if (dirLocal.isNull())
+            continue;
+        dirLocal.normalize();
+
+        QVector3D minV = mesh.boundsMin;
+        QVector3D maxV = mesh.boundsMax;
+        if (!mesh.boundsValid)
+        {
+            minV = QVector3D(mesh.vertices[0].px, mesh.vertices[0].py, mesh.vertices[0].pz);
+            maxV = minV;
+            for (const Vertex &v : mesh.vertices)
+            {
+                minV.setX(qMin(minV.x(), v.px));
+                minV.setY(qMin(minV.y(), v.py));
+                minV.setZ(qMin(minV.z(), v.pz));
+                maxV.setX(qMax(maxV.x(), v.px));
+                maxV.setY(qMax(maxV.y(), v.py));
+                maxV.setZ(qMax(maxV.z(), v.pz));
+            }
+        }
+
+        float tNear = 0.0f;
+        float tFar = 0.0f;
+        if (!rayAabbIntersection(originLocal, dirLocal, minV, maxV, tNear, tFar))
+            continue;
+
+        auto getVertex = [&](int idx)
+        {
+            const Vertex &v = mesh.vertices[idx];
+            return QVector3D(v.px, v.py, v.pz);
+        };
+
+        auto testTriangle = [&](const QVector3D &v0, const QVector3D &v1, const QVector3D &v2)
+        {
+            float tHit = 0.0f;
+            if (!rayTriangleIntersection(originLocal, dirLocal, v0, v1, v2, tHit))
+                return;
+            const QVector3D localHit = originLocal + dirLocal * tHit;
+            const QVector3D worldHit = (mesh.modelMatrix * QVector4D(localHit, 1.0f)).toVector3D();
+            const float dist = (worldHit - origin).length();
+            if (dist < hit.distance)
+            {
+                hit.distance = dist;
+                hit.meshIndex = meshIndex;
+                hit.worldPos = worldHit;
+            }
+        };
+
+        if (!mesh.indices.isEmpty())
+        {
+            for (int i = 0; i + 2 < mesh.indices.size(); i += 3)
+            {
+                const QVector3D v0 = getVertex(int(mesh.indices[i]));
+                const QVector3D v1 = getVertex(int(mesh.indices[i + 1]));
+                const QVector3D v2 = getVertex(int(mesh.indices[i + 2]));
+                testTriangle(v0, v1, v2);
+            }
+        }
+        else
+        {
+            for (int i = 0; i + 2 < mesh.vertices.size(); i += 3)
+            {
+                const QVector3D v0 = getVertex(i);
+                const QVector3D v1 = getVertex(i + 1);
+                const QVector3D v2 = getVertex(i + 2);
+                testTriangle(v0, v1, v2);
+            }
+        }
+    }
+
+    return hit.meshIndex >= 0;
 }
 
 class RhiQmlItemRenderer final : public QQuickRhiItemRenderer
@@ -384,6 +573,48 @@ public:
             m_scene.setHazeEnabled(false);
             m_scene.setHazeDensity(0.0f);
         }
+
+        QVector<RhiQmlItem::PickRequest> picks;
+        qmlItem->takePendingPickRequests(picks);
+        if (!picks.isEmpty())
+        {
+            for (const auto &pick : picks)
+            {
+                PickHit hit;
+                const bool hitOk = pickSceneMesh(m_scene, m_rhiContext.rhi(), pick.normPos, hit);
+
+                QObject *hitItem = nullptr;
+                if (hitOk)
+                {
+                    for (const ModelRecord &record : m_qmlModels)
+                    {
+                        if (hit.meshIndex >= record.firstMesh
+                                && hit.meshIndex < record.firstMesh + record.meshCount)
+                        {
+                            hitItem = const_cast<ModelItem *>(record.item);
+                            break;
+                        }
+                    }
+                    if (!hitItem)
+                    {
+                        for (const CubeRecord &record : m_qmlCubes)
+                        {
+                            if (hit.meshIndex >= record.firstMesh
+                                    && hit.meshIndex < record.firstMesh + record.meshCount)
+                            {
+                                hitItem = const_cast<CubeItem *>(record.item);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                QMetaObject::invokeMethod(qmlItem, "dispatchPickResult", Qt::QueuedConnection,
+                                          Q_ARG(QObject *, hitItem),
+                                          Q_ARG(QVector3D, hitOk ? hit.worldPos : QVector3D()),
+                                          Q_ARG(bool, hitOk));
+            }
+        }
     }
 
     void render(QRhiCommandBuffer *cb) override
@@ -443,7 +674,7 @@ private:
 RhiQmlItem::RhiQmlItem(QQuickItem *parent)
     : QQuickRhiItem(parent)
 {
-    setAcceptedMouseButtons(Qt::RightButton);
+    setAcceptedMouseButtons(Qt::LeftButton | Qt::RightButton);
     setFlag(ItemIsFocusScope, true);
     m_cameraTick = new QTimer(this);
     m_cameraTick->setInterval(16);
@@ -630,6 +861,21 @@ void RhiQmlItem::keyReleaseEvent(QKeyEvent *event)
 
 void RhiQmlItem::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::LeftButton)
+    {
+        const float w = width();
+        const float h = height();
+        if (w > 0.0f && h > 0.0f)
+        {
+            const QPointF pos = event->position();
+            const QPointF normPos(pos.x() / w, pos.y() / h);
+            m_pendingPickRequests.push_back({ normPos, event->modifiers() });
+            update();
+        }
+        event->accept();
+        return;
+    }
+
     if (!m_freeCameraEnabled || event->button() != Qt::RightButton)
     {
         QQuickRhiItem::mousePressEvent(event);
@@ -831,6 +1077,17 @@ void RhiQmlItem::takePendingLights(QVector<Light> &out)
 {
     out = std::move(m_pendingLights);
     m_pendingLights.clear();
+}
+
+void RhiQmlItem::takePendingPickRequests(QVector<PickRequest> &out)
+{
+    out = std::move(m_pendingPickRequests);
+    m_pendingPickRequests.clear();
+}
+
+void RhiQmlItem::dispatchPickResult(QObject *item, const QVector3D &worldPos, bool hit)
+{
+    emit meshPicked(item, worldPos, hit);
 }
 
 QQuickRhiItemRenderer *RhiQmlItem::createRenderer()

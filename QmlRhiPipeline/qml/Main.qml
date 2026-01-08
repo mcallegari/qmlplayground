@@ -12,6 +12,8 @@ Window {
 
     property real meshStep: 0.25
     property vector3d cubePos: Qt.vector3d(0, 0, 0)
+    property vector3d lastPickPos: Qt.vector3d(0, 0, 0)
+    property var selectableItems: []
     property var ledColors: [
         Qt.vector3d(1.0, 0.1, 0.1),
         Qt.vector3d(1.0, 0.4, 0.1),
@@ -30,6 +32,29 @@ Window {
     function scaleColor(c, s) {
         return Qt.vector3d(c.x * s, c.y * s, c.z * s)
     }
+    function registerSelectable(item) {
+        if (!item)
+            return
+        for (var i = 0; i < selectableItems.length; ++i) {
+            if (selectableItems[i] === item)
+                return
+        }
+        selectableItems.push(item)
+    }
+    function unregisterSelectable(item) {
+        if (!item)
+            return
+        for (var i = selectableItems.length - 1; i >= 0; --i) {
+            if (selectableItems[i] === item)
+                selectableItems.splice(i, 1)
+        }
+    }
+    function clearSelection() {
+        for (var i = 0; i < selectableItems.length; ++i) {
+            if (selectableItems[i])
+                selectableItems[i].isSelected = false
+        }
+    }
     RhiQmlItem {
         id: renderer
         anchors.fill: parent
@@ -41,6 +66,14 @@ Window {
         bloomRadius: 2.0
         moveSpeed: 5.0
         lookSensitivity: 0.2
+        onMeshPicked: function(item, worldPos, hit) {
+            if (!hit)
+                return
+            root.lastPickPos = worldPos
+            root.clearSelection()
+            if (item && item.isSelected !== undefined)
+                item.isSelected = true
+        }
 
         WheelHandler {
             target: renderer
@@ -165,6 +198,8 @@ Window {
 */
         Instantiator {
             model: 12
+            onObjectAdded: function(index, object) { root.registerSelectable(object) }
+            onObjectRemoved: function(index, object) { root.unregisterSelectable(object) }
             delegate: Cube {
                 property vector3d ledColor: root.ledColors[index % root.ledColors.length]
                 position: Qt.vector3d(0 + index * 0.42, -2.2, 2.5)
@@ -176,26 +211,32 @@ Window {
         }
 
         Cube {
+            id: mainCube
             position: cubePos
             rotationDegrees: Qt.vector3d(0, 0, 0)
             scale: Qt.vector3d(1, 1, 1)
-            isSelected: true
+            Component.onCompleted: root.registerSelectable(this)
+            Component.onDestruction: root.unregisterSelectable(this)
         }
 
         // ground plane
         Cube {
+            id: groundPlane
             position: Qt.vector3d(0, -2.5, 0)
             rotationDegrees: Qt.vector3d(0, 0, 0)
             scale: Qt.vector3d(10, 0.2, 10)
-            //isSelected: true
+            Component.onCompleted: root.registerSelectable(this)
+            Component.onDestruction: root.unregisterSelectable(this)
         }
 
         Model {
+            id: suzanne
             path: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
             position: Qt.vector3d(1.5, -1.2, 0)
             rotationDegrees: Qt.vector3d(0, -30, 0)
             scale: Qt.vector3d(1, 1, 1)
-            isSelected: true
+            Component.onCompleted: root.registerSelectable(this)
+            Component.onDestruction: root.unregisterSelectable(this)
         }
 
     }
