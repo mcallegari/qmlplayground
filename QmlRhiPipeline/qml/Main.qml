@@ -153,7 +153,16 @@ Window {
             beamShape: Light.BeamShape
             beamRadius: 0.3
         }
-
+/*
+        Hazer {
+            position: Qt.vector3d(0, 1.5, -2.0)
+            direction: Qt.vector3d(1, 0, 0)
+            length: 4.0
+            radius: 1.5
+            density: 0.8
+            enabled: true
+        }
+*/
         Instantiator {
             model: 12
             delegate: Cube {

@@ -1,10 +1,12 @@
 #pragma once
 
 #include <QtGui/QWindow>
-#include <QtGui/QVulkanInstance>
 #include <QtGui/QOpenGLContext>
 #include <QtGui/QOffscreenSurface>
 #include <rhi/qrhi.h>
+#if QT_CONFIG(vulkan)
+#include <QtGui/QVulkanInstance>
+#endif
 
 class RhiContext
 {
@@ -35,7 +37,9 @@ private:
     QRhiCommandBuffer *m_cb = nullptr;
     QRhiCommandBuffer *m_externalCb = nullptr;
     QRhiRenderTarget *m_externalRt = nullptr;
+#if QT_CONFIG(vulkan)
     QVulkanInstance m_vkInstance;
+#endif
     QOpenGLContext *m_glContext = nullptr;
     QOffscreenSurface *m_glOffscreenSurface = nullptr;
     QSize m_swapChainSize;

@@ -7,6 +7,7 @@
 #include "qml/LightItem.h"
 #include "qml/ModelItem.h"
 #include "qml/CubeItem.h"
+#include "qml/HazerItem.h"
 #include "qml/RhiQmlItem.h"
 
 int main(int argc, char **argv)
@@ -16,6 +17,7 @@ int main(int argc, char **argv)
     qmlRegisterType<RhiQmlItem>("RhiQmlItem", 1, 0, "RhiQmlItem");
     qmlRegisterUncreatableType<RhiQmlItem>("RhiQmlItem", 1, 0, "Scene", "Scene enums only");
     qmlRegisterType<LightItem>("RhiQmlItem", 1, 0, "Light");
+    qmlRegisterType<HazerItem>("RhiQmlItem", 1, 0, "Hazer");
     qmlRegisterType<CameraItem>("RhiQmlItem", 1, 0, "Camera");
     qmlRegisterType<ModelItem>("RhiQmlItem", 1, 0, "Model");
     qmlRegisterType<CubeItem>("RhiQmlItem", 1, 0, "Cube");

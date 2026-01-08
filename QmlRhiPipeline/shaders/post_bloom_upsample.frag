@@ -11,8 +11,8 @@ layout(std140, binding = 1) uniform PostParams {
 
 void main()
 {
-    float radius = clamp(uParams.intensity.y, 0.0, 8.0);
-    vec2 halfPixel = uParams.pixelSize.xy * max(radius * 0.5, 1.0);
+    float radiusScale = clamp(uParams.intensity.y / 10.0, 0.0, 1.0);
+    vec2 halfPixel = uParams.pixelSize.xy * mix(1.0, 2.5, radiusScale);
     vec2 uv = vUv;
 
     vec4 sum = vec4(0.0);

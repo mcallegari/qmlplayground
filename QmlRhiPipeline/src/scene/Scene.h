@@ -106,6 +106,54 @@ public:
     {
         m_beamModel = mode;
     }
+    QVector3D hazePosition() const
+    {
+        return m_hazePosition;
+    }
+    void setHazePosition(const QVector3D &position)
+    {
+        m_hazePosition = position;
+    }
+    QVector3D hazeDirection() const
+    {
+        return m_hazeDirection;
+    }
+    void setHazeDirection(const QVector3D &direction)
+    {
+        m_hazeDirection = direction;
+    }
+    float hazeLength() const
+    {
+        return m_hazeLength;
+    }
+    void setHazeLength(float length)
+    {
+        m_hazeLength = length;
+    }
+    float hazeRadius() const
+    {
+        return m_hazeRadius;
+    }
+    void setHazeRadius(float radius)
+    {
+        m_hazeRadius = radius;
+    }
+    float hazeDensity() const
+    {
+        return m_hazeDensity;
+    }
+    void setHazeDensity(float density)
+    {
+        m_hazeDensity = density;
+    }
+    bool hazeEnabled() const
+    {
+        return m_hazeEnabled;
+    }
+    void setHazeEnabled(bool enabled)
+    {
+        m_hazeEnabled = enabled;
+    }
     float bloomIntensity() const
     {
         return m_bloomIntensity;
@@ -133,4 +181,10 @@ private:
     BeamModel m_beamModel = BeamModel::SoftHaze;
     float m_bloomIntensity = 0.0f;
     float m_bloomRadius = 4.0f;
+    QVector3D m_hazePosition = QVector3D(0.0f, 0.0f, 0.0f);
+    QVector3D m_hazeDirection = QVector3D(0.0f, 1.0f, 0.0f);
+    float m_hazeLength = 3.0f;
+    float m_hazeRadius = 1.0f;
+    float m_hazeDensity = 0.0f;
+    bool m_hazeEnabled = false;
 };

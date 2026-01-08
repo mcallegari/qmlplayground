@@ -17,6 +17,7 @@ add_executable(qmlrhipipeline
     src/core/ShaderManager.cpp
     src/qml/CameraItem.cpp
     src/qml/CubeItem.cpp
+    src/qml/HazerItem.cpp
     src/qml/LightItem.cpp
     src/qml/ModelItem.cpp
     src/qml/RhiQmlItem.cpp

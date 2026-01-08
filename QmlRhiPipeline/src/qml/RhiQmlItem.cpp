@@ -17,6 +17,7 @@
 #include "scene/AssimpLoader.h"
 #include "qml/CameraItem.h"
 #include "qml/LightItem.h"
+#include "qml/HazerItem.h"
 #include "qml/ModelItem.h"
 #include "qml/CubeItem.h"
 
@@ -367,6 +368,22 @@ public:
         m_scene.setBeamModel(static_cast<Scene::BeamModel>(qmlItem->beamModel()));
         m_scene.setBloomIntensity(qmlItem->bloomIntensity());
         m_scene.setBloomRadius(qmlItem->bloomRadius());
+
+        const HazerItem *hazer = qmlItem->findChild<HazerItem *>(QString(), Qt::FindChildrenRecursively);
+        if (hazer && hazer->enabled())
+        {
+            m_scene.setHazeEnabled(true);
+            m_scene.setHazePosition(hazer->position());
+            m_scene.setHazeDirection(hazer->direction());
+            m_scene.setHazeLength(hazer->length());
+            m_scene.setHazeRadius(hazer->radius());
+            m_scene.setHazeDensity(hazer->density());
+        }
+        else
+        {
+            m_scene.setHazeEnabled(false);
+            m_scene.setHazeDensity(0.0f);
+        }
     }
 
     void render(QRhiCommandBuffer *cb) override
