@@ -54,6 +54,15 @@ layout(std140, binding = 19) uniform FlipUbo {
     vec4 flip;
 } uFlip;
 
+layout(std140, binding = 21) uniform LightCullUbo {
+    vec4 screen; // x=width y=height z=invW w=invH
+    vec4 tile;   // x=tileCountX y=tileCountY z=tileSize w=enabled
+} uLightCull;
+
+layout(std430, binding = 22) readonly buffer LightIndexBuffer {
+    uint data[];
+} bLightIndex;
+
 vec3 decodeNormal(vec3 enc)
 {
     return normalize(enc * 2.0 - 1.0);
@@ -272,10 +281,23 @@ void main()
     vec3 Lo = vec3(0.0);
 
     int count = int(uLights.lightCount.x);
+    int tileCountX = int(uLightCull.tile.x + 0.5);
+    int tileCountY = int(uLightCull.tile.y + 0.5);
+    int tileSize = int(uLightCull.tile.z + 0.5);
+    int tileX = tileSize > 0 ? int(gl_FragCoord.x) / tileSize : 0;
+    int tileY = tileSize > 0 ? int(gl_FragCoord.y) / tileSize : 0;
+    tileX = clamp(tileX, 0, max(tileCountX - 1, 0));
+    tileY = clamp(tileY, 0, max(tileCountY - 1, 0));
+    int tileIndex = tileX + tileY * tileCountX;
+    int baseIndex = tileIndex * (MAX_LIGHTS + 1);
+    int tileCount = (tileCountX > 0 && tileCountY > 0) ? int(bLightIndex.data[baseIndex]) : 0;
     bool volumetricsEnabled = uLights.lightFlags.x > 0.5;
     bool smokeNoiseEnabled = uLights.lightFlags.y > 0.5;
     bool shadowsEnabled = uLights.lightFlags.z > 0.5;
-    for (int i = 0; i < count; ++i) {
+    for (int li = 0; li < tileCount; ++li) {
+        int i = int(bLightIndex.data[baseIndex + 1 + li]);
+        if (i < 0 || i >= count)
+            continue;
         vec4 pr = uLights.lightPosRange[i];
         vec4 ci = uLights.lightColorIntensity[i];
         vec4 di = uLights.lightDirInner[i];
@@ -416,7 +438,10 @@ void main()
             rayLen = 50.0;
         }
 
-        for (int i = 0; i < count; ++i) {
+        for (int li = 0; li < tileCount; ++li) {
+            int i = int(bLightIndex.data[baseIndex + 1 + li]);
+            if (i < 0 || i >= count)
+                continue;
             vec4 other = uLights.lightOther[i];
             int type = int(other.y + 0.5);
             if (type != 2)

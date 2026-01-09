@@ -1,9 +1,88 @@
 #version 450
 
-layout(local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+#define MAX_LIGHTS 32
 
-// TODO: implement tiled/clustered light culling.
+layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
+
+layout(std140, binding = 0) uniform LightsUbo {
+    vec4 lightCount;
+    vec4 lightParams;
+    vec4 lightFlags;
+    vec4 lightBeam[MAX_LIGHTS];
+    vec4 lightPosRange[MAX_LIGHTS];
+    vec4 lightColorIntensity[MAX_LIGHTS];
+    vec4 lightDirInner[MAX_LIGHTS];
+    vec4 lightOther[MAX_LIGHTS];
+} uLights;
+
+layout(std140, binding = 1) uniform CullParams {
+    mat4 view;
+    mat4 proj;
+    vec4 screen; // x=width y=height z=invW w=invH
+    vec4 tile;   // x=tileCountX y=tileCountY z=tileSize w=enabled
+} uCull;
+
+layout(std430, binding = 2) buffer LightIndexBuffer {
+    uint data[];
+} bLightIndex;
 
 void main()
 {
+    uint tileX = gl_GlobalInvocationID.x;
+    uint tileY = gl_GlobalInvocationID.y;
+    uint tileCountX = uint(uCull.tile.x + 0.5);
+    uint tileCountY = uint(uCull.tile.y + 0.5);
+    if (tileX >= tileCountX || tileY >= tileCountY)
+        return;
+
+    uint base = (tileY * tileCountX + tileX) * uint(MAX_LIGHTS + 1);
+    uint count = 0u;
+
+    float tileSize = uCull.tile.z;
+    float minX = float(tileX) * tileSize;
+    float minY = float(tileY) * tileSize;
+    float maxX = min(minX + tileSize, uCull.screen.x);
+    float maxY = min(minY + tileSize, uCull.screen.y);
+
+    int lightCount = int(uLights.lightCount.x);
+    for (int i = 0; i < lightCount; ++i)
+    {
+        vec4 other = uLights.lightOther[i];
+        int type = int(other.y + 0.5);
+        if (type == 0)
+            continue;
+        vec4 pr = uLights.lightPosRange[i];
+        float range = pr.w;
+        if (range <= 0.0)
+            continue;
+
+        vec4 viewPos = uCull.view * vec4(pr.xyz, 1.0);
+        float z = -viewPos.z;
+        if (z <= 0.001)
+            continue;
+
+        float projScale = max(uCull.proj[0][0], uCull.proj[1][1]);
+        float radiusNdc = range * projScale / z;
+        vec4 clip = uCull.proj * viewPos;
+        if (clip.w <= 0.0)
+            continue;
+        vec2 ndc = clip.xy / clip.w;
+        float screenX = (ndc.x * 0.5 + 0.5) * uCull.screen.x;
+        float screenY = (ndc.y * 0.5 + 0.5) * uCull.screen.y;
+        float radiusX = radiusNdc * 0.5 * uCull.screen.x;
+        float radiusY = radiusNdc * 0.5 * uCull.screen.y;
+        float radius = max(radiusX, radiusY);
+
+        if (screenX + radius < minX || screenX - radius > maxX
+                || screenY + radius < minY || screenY - radius > maxY)
+            continue;
+
+        if (count < uint(MAX_LIGHTS))
+        {
+            bLightIndex.data[base + 1u + count] = uint(i);
+            count += 1u;
+        }
+    }
+
+    bLightIndex.data[base] = count;
 }

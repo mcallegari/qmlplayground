@@ -19,6 +19,7 @@ void DeferredRenderer::initialize(RhiContext *rhi, RenderTargetCache *targets, S
     m_frameCtx.targets = targets;
     m_frameCtx.shaders = shaders;
     m_frameCtx.shadows = &m_shadowData;
+    m_frameCtx.lightCulling = &m_lightCulling;
 
     const bool skipLighting = qEnvironmentVariableIsSet("RHIPIPELINE_SKIP_LIGHTING");
     m_graph.clear();

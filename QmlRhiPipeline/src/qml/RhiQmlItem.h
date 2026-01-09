@@ -11,6 +11,8 @@
 
 #include "scene/Scene.h"
 
+class QTimer;
+
 class RhiQmlItem : public QQuickRhiItem
 {
     Q_OBJECT
@@ -23,6 +25,9 @@ class RhiQmlItem : public QQuickRhiItem
     Q_PROPERTY(BeamModel beamModel READ beamModel WRITE setBeamModel NOTIFY beamModelChanged)
     Q_PROPERTY(float bloomIntensity READ bloomIntensity WRITE setBloomIntensity NOTIFY bloomIntensityChanged)
     Q_PROPERTY(float bloomRadius READ bloomRadius WRITE setBloomRadius NOTIFY bloomRadiusChanged)
+    Q_PROPERTY(bool volumetricEnabled READ volumetricEnabled WRITE setVolumetricEnabled NOTIFY volumetricEnabledChanged)
+    Q_PROPERTY(bool shadowsEnabled READ shadowsEnabled WRITE setShadowsEnabled NOTIFY shadowsEnabledChanged)
+    Q_PROPERTY(bool smokeNoiseEnabled READ smokeNoiseEnabled WRITE setSmokeNoiseEnabled NOTIFY smokeNoiseEnabledChanged)
     Q_PROPERTY(bool freeCameraEnabled READ freeCameraEnabled WRITE setFreeCameraEnabled NOTIFY freeCameraEnabledChanged)
     Q_PROPERTY(float moveSpeed READ moveSpeed WRITE setMoveSpeed NOTIFY moveSpeedChanged)
     Q_PROPERTY(float lookSensitivity READ lookSensitivity WRITE setLookSensitivity NOTIFY lookSensitivityChanged)
@@ -58,12 +63,19 @@ public:
     void setBloomIntensity(float intensity);
     float bloomRadius() const { return m_bloomRadius; }
     void setBloomRadius(float radius);
+    bool volumetricEnabled() const { return m_volumetricEnabled; }
+    void setVolumetricEnabled(bool enabled);
+    bool shadowsEnabled() const { return m_shadowsEnabled; }
+    void setShadowsEnabled(bool enabled);
+    bool smokeNoiseEnabled() const { return m_smokeNoiseEnabled; }
+    void setSmokeNoiseEnabled(bool enabled);
     bool freeCameraEnabled() const { return m_freeCameraEnabled; }
     void setFreeCameraEnabled(bool enabled);
     float moveSpeed() const { return m_moveSpeed; }
     void setMoveSpeed(float speed);
     float lookSensitivity() const { return m_lookSensitivity; }
     void setLookSensitivity(float sensitivity);
+    float smokeTimeSeconds() const;
 
     Q_INVOKABLE void addModel(const QString &path);
     Q_INVOKABLE void addModel(const QString &path, const QVector3D &position);
@@ -111,13 +123,14 @@ public:
         int type = 0;
     };
     void takePendingDragRequests(QVector<DragRequest> &out);
-    Q_INVOKABLE void dispatchPickResult(QObject *item, const QVector3D &worldPos, bool hit);
+    Q_INVOKABLE void dispatchPickResult(QObject *item, const QVector3D &worldPos, bool hit, int modifiers);
     Q_INVOKABLE void setCameraDirection(const QVector3D &dir);
     Q_INVOKABLE void rotateFreeCamera(float yawDelta, float pitchDelta);
     Q_PROPERTY(QObject *selectedItem READ selectedItem WRITE setSelectedItem NOTIFY selectedItemChanged)
     QObject *selectedItem() const { return m_selectedItem; }
     void setSelectedItem(QObject *item);
     Q_INVOKABLE void setObjectPosition(QObject *item, const QVector3D &pos);
+    Q_INVOKABLE void setObjectRotation(QObject *item, const QVector3D &rotation);
 
 Q_SIGNALS:
     void cameraPositionChanged();
@@ -129,10 +142,13 @@ Q_SIGNALS:
     void beamModelChanged();
     void bloomIntensityChanged();
     void bloomRadiusChanged();
+    void volumetricEnabledChanged();
+    void shadowsEnabledChanged();
+    void smokeNoiseEnabledChanged();
     void freeCameraEnabledChanged();
     void moveSpeedChanged();
     void lookSensitivityChanged();
-    void meshPicked(QObject *item, const QVector3D &worldPos, bool hit);
+    void meshPicked(QObject *item, const QVector3D &worldPos, bool hit, int modifiers);
     void selectedItemChanged();
 
 protected:
@@ -148,6 +164,7 @@ private:
     void updateYawPitchFromDirection(const QVector3D &dir);
     QVector3D forwardVector() const;
     QVector3D rightVector() const;
+    void updateSmokeTicker();
 
     QVector3D m_cameraPosition = QVector3D(0.0f, 1.0f, 5.0f);
     QVector3D m_cameraTarget = QVector3D(0.0f, 0.0f, 0.0f);
@@ -158,6 +175,9 @@ private:
     BeamModel m_beamModel = SoftHaze;
     float m_bloomIntensity = 0.6f;
     float m_bloomRadius = 6.0f;
+    bool m_volumetricEnabled = true;
+    bool m_shadowsEnabled = true;
+    bool m_smokeNoiseEnabled = true;
     bool m_freeCameraEnabled = false;
     float m_moveSpeed = 5.0f;
     float m_lookSensitivity = 0.2f;
@@ -166,11 +186,15 @@ private:
     bool m_moveLeft = false;
     bool m_moveRight = false;
     bool m_looking = false;
+    bool m_panning = false;
     QPointF m_lastMousePos = QPointF(0.0, 0.0);
+    QPointF m_lastPanPos = QPointF(0.0, 0.0);
     float m_yawDeg = -90.0f;
     float m_pitchDeg = -10.0f;
     QElapsedTimer m_cameraTimer;
     QTimer *m_cameraTick = nullptr;
+    QElapsedTimer m_smokeTimer;
+    QTimer *m_smokeTick = nullptr;
 
     QVector<PendingModel> m_pendingModels;
     QVector<Light> m_pendingLights;

@@ -170,6 +170,38 @@ public:
     {
         m_bloomRadius = radius;
     }
+    bool volumetricEnabled() const
+    {
+        return m_volumetricEnabled;
+    }
+    void setVolumetricEnabled(bool enabled)
+    {
+        m_volumetricEnabled = enabled;
+    }
+    bool shadowsEnabled() const
+    {
+        return m_shadowsEnabled;
+    }
+    void setShadowsEnabled(bool enabled)
+    {
+        m_shadowsEnabled = enabled;
+    }
+    bool smokeNoiseEnabled() const
+    {
+        return m_smokeNoiseEnabled;
+    }
+    void setSmokeNoiseEnabled(bool enabled)
+    {
+        m_smokeNoiseEnabled = enabled;
+    }
+    float timeSeconds() const
+    {
+        return m_timeSeconds;
+    }
+    void setTimeSeconds(float seconds)
+    {
+        m_timeSeconds = seconds;
+    }
 
 private:
     Camera m_camera;
@@ -181,6 +213,10 @@ private:
     BeamModel m_beamModel = BeamModel::SoftHaze;
     float m_bloomIntensity = 0.0f;
     float m_bloomRadius = 4.0f;
+    float m_timeSeconds = 0.0f;
+    bool m_volumetricEnabled = true;
+    bool m_shadowsEnabled = true;
+    bool m_smokeNoiseEnabled = true;
     QVector3D m_hazePosition = QVector3D(0.0f, 0.0f, 0.0f);
     QVector3D m_hazeDirection = QVector3D(0.0f, 1.0f, 0.0f);
     float m_hazeLength = 3.0f;

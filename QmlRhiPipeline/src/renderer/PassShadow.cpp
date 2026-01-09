@@ -64,6 +64,7 @@ void PassShadow::execute(FrameContext &ctx)
     if (!ctx.scene || !ctx.shadows)
         return;
 
+    const bool shadowsEnabled = ctx.scene->shadowsEnabled();
     const Light *dirLight = nullptr;
     for (const Light &l : ctx.scene->lights())
     {
@@ -85,6 +86,12 @@ void PassShadow::execute(FrameContext &ctx)
     }
     if (dirLight)
     {
+        ctx.shadows->dirLightDir = QVector4D(dirLight->direction.normalized(), 0.0f);
+        ctx.shadows->dirLightColorIntensity = QVector4D(dirLight->color, dirLight->intensity);
+    }
+
+    if (dirLight && shadowsEnabled)
+    {
         const Camera &cam = ctx.scene->camera();
         const float nearPlane = cam.nearPlane();
         const float farPlane = cam.farPlane();
@@ -103,8 +110,6 @@ void PassShadow::execute(FrameContext &ctx)
 
         ctx.shadows->cascadeCount = cascadeCount;
         ctx.shadows->splits = QVector4D(splits[1], splits[2], splits[3], farPlane);
-        ctx.shadows->dirLightDir = QVector4D(dirLight->direction.normalized(), 0.0f);
-        ctx.shadows->dirLightColorIntensity = QVector4D(dirLight->color, dirLight->intensity);
 
         for (int i = 0; i < cascadeCount; ++i)
         {
@@ -115,6 +120,10 @@ void PassShadow::execute(FrameContext &ctx)
             ctx.shadows->lightViewProj[i] = lightViewProj;
             renderCascade(ctx, m_cascades[i], lightViewProj);
         }
+    }
+    else
+    {
+        ctx.shadows->cascadeCount = 0;
     }
 
     for (int i = 0; i < kMaxLights; ++i)
@@ -136,7 +145,7 @@ void PassShadow::execute(FrameContext &ctx)
         ctx.shadows->spotLightViewProj[i] = lightViewProj;
     }
 
-    if (!m_spotRts.isEmpty() && !m_spotShadowMaps.isEmpty())
+    if (shadowsEnabled && !m_spotRts.isEmpty() && !m_spotShadowMaps.isEmpty())
     {
         const int maxSlots = qMin(int(m_spotRts.size()), int(m_spotShadowMaps.size()));
         int rendered = 0;
@@ -484,6 +493,10 @@ void PassShadow::renderCascade(FrameContext &ctx, Cascade &cascade, const QMatri
     for (int i = meshes.size() - 1; i >= 0; --i)
     {
         Mesh &mesh = const_cast<Mesh &>(meshes[i]);
+        if (mesh.gizmoAxis >= 0)
+            continue;
+        if (!mesh.visible)
+            continue;
         if (!mesh.vertexBuffer || !mesh.indexBuffer || mesh.indexCount == 0)
             continue;
         QRhiShaderResourceBindings *meshSrb = shadowSrbForMesh(ctx, mesh);
@@ -543,6 +556,10 @@ void PassShadow::renderSpot(FrameContext &ctx,
 
     for (Mesh &mesh : ctx.scene->meshes())
     {
+        if (mesh.gizmoAxis >= 0)
+            continue;
+        if (!mesh.visible)
+            continue;
         if (!mesh.vertexBuffer || !mesh.indexBuffer || mesh.indexCount == 0)
             continue;
         QRhiShaderResourceBindings *meshSrb = spotShadowSrbForMesh(ctx, mesh, slot);

@@ -7,6 +7,141 @@
 
 #include <QtGui/QColor>
 #include <QtGui/QVector4D>
+#include <cstring>
+
+void PassPost::ensureGizmoPipeline(FrameContext &ctx)
+{
+    if (!ctx.rhi || !ctx.shaders)
+        return;
+    QRhi *rhi = ctx.rhi->rhi();
+    if (!rhi)
+        return;
+    QRhiRenderTarget *swapRt = ctx.rhi->swapchainRenderTarget();
+    if (!swapRt)
+        return;
+
+    if (!m_gizmoCameraUbo)
+    {
+        const quint32 mat4Size = 16 * sizeof(float);
+        m_gizmoCameraUbo = rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, mat4Size);
+        if (!m_gizmoCameraUbo->create())
+        {
+            delete m_gizmoCameraUbo;
+            m_gizmoCameraUbo = nullptr;
+            return;
+        }
+        if (ctx.scene)
+        {
+            for (Mesh &mesh : ctx.scene->meshes())
+            {
+                delete mesh.gizmoSrb;
+                mesh.gizmoSrb = nullptr;
+            }
+        }
+    }
+
+    if (!m_gizmoModelUbo)
+    {
+        const quint32 mat4Size = 16 * sizeof(float);
+        m_gizmoModelUbo = rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, mat4Size * 2);
+        if (!m_gizmoModelUbo->create())
+            return;
+    }
+    if (!m_gizmoMaterialUbo)
+    {
+        m_gizmoMaterialUbo = rhi->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D) * 3);
+        if (!m_gizmoMaterialUbo->create())
+            return;
+    }
+    if (!m_gizmoLayoutSrb)
+    {
+        m_gizmoLayoutSrb = rhi->newShaderResourceBindings();
+        m_gizmoLayoutSrb->setBindings({
+            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, m_gizmoCameraUbo),
+            QRhiShaderResourceBinding::uniformBuffer(1, QRhiShaderResourceBinding::VertexStage, m_gizmoModelUbo),
+            QRhiShaderResourceBinding::uniformBuffer(2, QRhiShaderResourceBinding::FragmentStage, m_gizmoMaterialUbo)
+        });
+        if (!m_gizmoLayoutSrb->create())
+        {
+            delete m_gizmoLayoutSrb;
+            m_gizmoLayoutSrb = nullptr;
+            return;
+        }
+    }
+
+    if (m_gizmoPipeline && m_swapRpDesc == swapRt->renderPassDescriptor())
+        return;
+
+    delete m_gizmoPipeline;
+    m_gizmoPipeline = nullptr;
+
+    const QRhiShaderStage vs = ctx.shaders->loadStage(QRhiShaderStage::Vertex, QStringLiteral(":/shaders/gizmo.vert.qsb"));
+    const QRhiShaderStage fs = ctx.shaders->loadStage(QRhiShaderStage::Fragment, QStringLiteral(":/shaders/gizmo.frag.qsb"));
+    if (!vs.shader().isValid() || !fs.shader().isValid())
+        return;
+
+    QRhiGraphicsPipeline *pipeline = rhi->newGraphicsPipeline();
+    pipeline->setShaderStages({ vs, fs });
+
+    QRhiVertexInputLayout inputLayout;
+    inputLayout.setBindings({
+        QRhiVertexInputBinding(sizeof(Vertex))
+    });
+    inputLayout.setAttributes({
+        QRhiVertexInputAttribute(0, 0, QRhiVertexInputAttribute::Float3, 0),
+        QRhiVertexInputAttribute(0, 1, QRhiVertexInputAttribute::Float3, 12),
+        QRhiVertexInputAttribute(0, 2, QRhiVertexInputAttribute::Float2, 24)
+    });
+    pipeline->setVertexInputLayout(inputLayout);
+    pipeline->setSampleCount(1);
+    pipeline->setCullMode(QRhiGraphicsPipeline::None);
+    pipeline->setDepthTest(false);
+    pipeline->setDepthWrite(false);
+    pipeline->setShaderResourceBindings(m_gizmoLayoutSrb);
+    pipeline->setRenderPassDescriptor(swapRt->renderPassDescriptor());
+
+    if (!pipeline->create())
+    {
+        delete pipeline;
+        return;
+    }
+
+    m_gizmoPipeline = pipeline;
+}
+
+void PassPost::ensureGizmoMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceUpdateBatch *u)
+{
+    if (mesh.vertices.isEmpty() || mesh.indices.isEmpty())
+        return;
+
+    if (!mesh.vertexBuffer || !mesh.indexBuffer)
+    {
+        mesh.vertexBuffer = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::VertexBuffer, mesh.vertices.size() * sizeof(Vertex));
+        mesh.indexBuffer = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Immutable, QRhiBuffer::IndexBuffer, mesh.indices.size() * sizeof(quint32));
+        if (!mesh.vertexBuffer->create() || !mesh.indexBuffer->create())
+            return;
+
+        u->uploadStaticBuffer(mesh.vertexBuffer, mesh.vertices.constData());
+        u->uploadStaticBuffer(mesh.indexBuffer, mesh.indices.constData());
+        mesh.indexCount = mesh.indices.size();
+    }
+    if (mesh.indexCount == 0 && !mesh.indices.isEmpty())
+        mesh.indexCount = mesh.indices.size();
+
+    if (!mesh.modelUbo)
+    {
+        const quint32 mat4Size = 16 * sizeof(float);
+        mesh.modelUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, mat4Size * 2);
+        if (!mesh.modelUbo->create())
+            return;
+    }
+    if (!mesh.materialUbo)
+    {
+        mesh.materialUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D) * 3);
+        if (!mesh.materialUbo->create())
+            return;
+    }
+}
 
 void PassPost::prepare(FrameContext &ctx)
 {
@@ -49,6 +184,8 @@ void PassPost::prepare(FrameContext &ctx)
         m_bloomUpsamplePipeline = nullptr;
         delete m_combinePipeline;
         m_combinePipeline = nullptr;
+        delete m_gizmoPipeline;
+        m_gizmoPipeline = nullptr;
         m_swapRpDesc = nullptr;
         m_lastSize = size;
     }
@@ -196,6 +333,8 @@ void PassPost::prepare(FrameContext &ctx)
             return;
         m_combinePipeline = combinePipeline;
     }
+
+    ensureGizmoPipeline(ctx);
 }
 
 void PassPost::execute(FrameContext &ctx)
@@ -248,5 +387,94 @@ void PassPost::execute(FrameContext &ctx)
     cb->setViewport(QRhiViewport(0, 0, size.width(), size.height()));
     cb->setShaderResources(m_combineSrb);
     cb->draw(3);
+
+    if (m_gizmoPipeline && ctx.scene && m_gizmoCameraUbo)
+    {
+        struct GizmoCameraData
+        {
+            float viewProj[16];
+        } camData;
+        const QMatrix4x4 viewProj = ctx.rhi->rhi()->clipSpaceCorrMatrix()
+                * ctx.scene->camera().projectionMatrix()
+                * ctx.scene->camera().viewMatrix();
+        std::memcpy(camData.viewProj, viewProj.constData(), sizeof(camData.viewProj));
+
+        QRhiResourceUpdateBatch *gizmoUpdates = ctx.rhi->rhi()->nextResourceUpdateBatch();
+        gizmoUpdates->updateDynamicBuffer(m_gizmoCameraUbo, 0, sizeof(GizmoCameraData), &camData);
+
+        struct ModelData
+        {
+            float model[16];
+            float normalMatrix[16];
+        };
+        struct MaterialData
+        {
+            QVector4D baseColorMetal;
+            QVector4D roughnessOcclusion;
+            QVector4D emissive;
+        };
+
+        for (Mesh &mesh : ctx.scene->meshes())
+        {
+            if (mesh.gizmoAxis < 0)
+                continue;
+            ensureGizmoMeshBuffers(ctx, mesh, gizmoUpdates);
+            if (!mesh.modelUbo || !mesh.materialUbo)
+                continue;
+
+            QMatrix4x4 model = mesh.modelMatrix;
+            QMatrix4x4 normalMatrix = model.inverted();
+            normalMatrix = normalMatrix.transposed();
+            ModelData modelData;
+            std::memcpy(modelData.model, model.constData(), sizeof(modelData.model));
+            std::memcpy(modelData.normalMatrix, normalMatrix.constData(), sizeof(modelData.normalMatrix));
+
+            MaterialData matData;
+            matData.baseColorMetal = QVector4D(mesh.material.baseColor, mesh.material.metalness);
+            matData.roughnessOcclusion = QVector4D(mesh.material.roughness, mesh.material.occlusion, 0.0f, 0.0f);
+            matData.emissive = QVector4D(mesh.material.emissive, 0.0f);
+
+            gizmoUpdates->updateDynamicBuffer(mesh.modelUbo, 0, sizeof(ModelData), &modelData);
+            gizmoUpdates->updateDynamicBuffer(mesh.materialUbo, 0, sizeof(MaterialData), &matData);
+        }
+
+        cb->resourceUpdate(gizmoUpdates);
+        cb->setGraphicsPipeline(m_gizmoPipeline);
+        cb->setViewport(QRhiViewport(0, 0, size.width(), size.height()));
+
+        for (Mesh &mesh : ctx.scene->meshes())
+        {
+            if (mesh.gizmoAxis < 0)
+                continue;
+            if (!mesh.vertexBuffer || !mesh.indexBuffer || mesh.indexCount == 0)
+                continue;
+            if (!mesh.modelUbo || !mesh.materialUbo)
+                continue;
+
+            if (!mesh.gizmoSrb)
+            {
+                mesh.gizmoSrb = ctx.rhi->rhi()->newShaderResourceBindings();
+                mesh.gizmoSrb->setBindings({
+                    QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, m_gizmoCameraUbo),
+                    QRhiShaderResourceBinding::uniformBuffer(1, QRhiShaderResourceBinding::VertexStage, mesh.modelUbo),
+                    QRhiShaderResourceBinding::uniformBuffer(2, QRhiShaderResourceBinding::FragmentStage, mesh.materialUbo)
+                });
+                if (!mesh.gizmoSrb->create())
+                {
+                    delete mesh.gizmoSrb;
+                    mesh.gizmoSrb = nullptr;
+                }
+            }
+
+            if (!mesh.gizmoSrb)
+                continue;
+
+            cb->setShaderResources(mesh.gizmoSrb);
+            const QRhiCommandBuffer::VertexInput vbufBinding(mesh.vertexBuffer, 0);
+            cb->setVertexInput(0, 1, &vbufBinding, mesh.indexBuffer, 0, QRhiCommandBuffer::IndexUInt32);
+            cb->drawIndexed(mesh.indexCount);
+        }
+    }
+
     cb->endPass();
 }

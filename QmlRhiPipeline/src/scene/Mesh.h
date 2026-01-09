@@ -21,9 +21,16 @@ struct Mesh
     QVector<quint32> indices;
     QRhiBuffer *vertexBuffer = nullptr;
     QRhiBuffer *indexBuffer = nullptr;
+    QRhiTexture *baseColorTexture = nullptr;
+    QRhiTexture *normalTexture = nullptr;
+    QRhiTexture *metallicRoughnessTexture = nullptr;
+    QRhiSampler *baseColorSampler = nullptr;
+    QRhiSampler *normalSampler = nullptr;
+    QRhiSampler *metallicRoughnessSampler = nullptr;
     QRhiBuffer *modelUbo = nullptr;
     QRhiBuffer *materialUbo = nullptr;
     QRhiShaderResourceBindings *srb = nullptr;
+    QRhiShaderResourceBindings *gizmoSrb = nullptr;
     QRhiShaderResourceBindings *shadowSrb = nullptr;
     QVector<QRhiShaderResourceBindings *> spotShadowSrbs;
     int indexCount = 0;
@@ -35,6 +42,8 @@ struct Mesh
     bool boundsValid = false;
     bool selected = false;
     bool selectable = true;
+    bool visible = true;
     int gizmoAxis = -1;
+    int gizmoType = 0;
     Material material;
 };

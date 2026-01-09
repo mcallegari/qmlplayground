@@ -14,6 +14,13 @@ Window {
     property vector3d cubePos: Qt.vector3d(0, 0, 0)
     property vector3d lastPickPos: Qt.vector3d(0, 0, 0)
     property var selectableItems: []
+    property bool showFpsOverlay: false
+    property real fpsCurrent: 0.0
+    property real fpsMin: 0.0
+    property real fpsMax: 0.0
+    property real fpsAvg: 0.0
+    property int fpsSamples: 0
+    property double fpsLastStamp: 0.0
     property var ledColors: [
         Qt.vector3d(1.0, 0.1, 0.1),
         Qt.vector3d(1.0, 0.4, 0.1),
@@ -47,7 +54,42 @@ Window {
             return Qt.vector3d(0, 0, -1)
         return Qt.vector3d(a.x / l, a.y / l, a.z / l)
     }
-    function snapCamera(axis) {
+    function resetFps() {
+        fpsCurrent = 0.0
+        fpsMin = 0.0
+        fpsMax = 0.0
+        fpsAvg = 0.0
+        fpsSamples = 0
+        fpsLastStamp = 0.0
+    }
+    function updateFps() {
+        if (!showFpsOverlay) {
+            fpsLastStamp = 0.0
+            return
+        }
+        var now = Date.now()
+        if (fpsLastStamp === 0.0) {
+            fpsLastStamp = now
+            return
+        }
+        var dt = now - fpsLastStamp
+        if (dt <= 0.0)
+            return
+        var fps = 1000.0 / dt
+        fpsCurrent = fps
+        if (fpsSamples === 0) {
+            fpsMin = fps
+            fpsMax = fps
+            fpsAvg = fps
+        } else {
+            fpsMin = Math.min(fpsMin, fps)
+            fpsMax = Math.max(fpsMax, fps)
+            fpsAvg = fpsAvg + (fps - fpsAvg) / (fpsSamples + 1)
+        }
+        fpsSamples += 1
+        fpsLastStamp = now
+    }
+    function snapCamera(axis, useOrigin) {
         var target = renderer.cameraTarget
         var pos = renderer.cameraPosition
         var dx = pos.x - target.x
@@ -56,6 +98,10 @@ Window {
         var dist = Math.sqrt(dx * dx + dy * dy + dz * dz)
         if (dist < 0.001)
             dist = 1.0
+        if (useOrigin)
+            target = Qt.vector3d(0, 0, 0)
+        if (useOrigin)
+            dist = Math.sqrt(pos.x * pos.x + pos.y * pos.y + pos.z * pos.z)
         var newPos = Qt.vector3d(target.x + axis.x * dist,
                                  target.y + axis.y * dist,
                                  target.z + axis.z * dist)
@@ -90,23 +136,35 @@ Window {
     }
     RhiQmlItem {
         id: renderer
+        objectName: "sceneRenderer"
         anchors.fill: parent
         focus: true
         freeCameraEnabled: true
         smokeAmount: 0.8 // 0-1 range
+        volumetricEnabled: true
+        shadowsEnabled: true
+        smokeNoiseEnabled: true
         beamModel: Scene.SoftHaze // soft haze (fast fade), physically‑motivated (inverse‑square + exponential
         bloomIntensity: 2.0
         bloomRadius: 2.0
         moveSpeed: 5.0
         lookSensitivity: 0.2
-        onMeshPicked: function(item, worldPos, hit) {
-            root.clearSelection()
+        onMeshPicked: function(item, worldPos, hit, modifiers) {
+            var multi = (modifiers & Qt.ShiftModifier) !== 0
+            var canSelect = item && item.isSelected !== undefined
+            if (canSelect && item.selectable === false)
+                canSelect = false
+            if (!multi && (!hit || canSelect))
+                root.clearSelection()
             if (hit)
                 root.lastPickPos = worldPos
-            if (item && item.isSelected !== undefined && hit) {
-                item.isSelected = true
+            if (item && item.isSelected !== undefined && hit && canSelect) {
+                if (multi)
+                    item.isSelected = !item.isSelected
+                else
+                    item.isSelected = true
                 renderer.selectedItem = item
-            } else {
+            } else if (!multi && !hit) {
                 renderer.selectedItem = null
             }
         }
@@ -126,28 +184,38 @@ Window {
         }
 
         Keys.onPressed: function(event) {
+            if (event.key === Qt.Key_F) {
+                root.showFpsOverlay = !root.showFpsOverlay
+                root.resetFps()
+                event.accepted = true
+                return
+            }
+            if (event.key === Qt.Key_V) {
+                renderer.volumetricEnabled = !renderer.volumetricEnabled
+                event.accepted = true
+                return
+            }
+            if (event.key === Qt.Key_H) {
+                renderer.shadowsEnabled = !renderer.shadowsEnabled
+                event.accepted = true
+                return
+            }
+            if (event.key === Qt.Key_N) {
+                renderer.smokeNoiseEnabled = !renderer.smokeNoiseEnabled
+                event.accepted = true
+                return
+            }
             var step = meshStep
             if (event.modifiers & Qt.ShiftModifier)
                 step = meshStep * 0.25
             if (event.modifiers & Qt.ControlModifier)
                 step = meshStep * 4.0
-            if (event.key === Qt.Key_Left) {
-                cubePos = Qt.vector3d(cubePos.x - step, cubePos.y, cubePos.z)
-                event.accepted = true
-            } else if (event.key === Qt.Key_Right) {
-                cubePos = Qt.vector3d(cubePos.x + step, cubePos.y, cubePos.z)
-                event.accepted = true
-            } else if (event.key === Qt.Key_Up) {
-                cubePos = Qt.vector3d(cubePos.x, cubePos.y, cubePos.z - step)
-                event.accepted = true
-            } else if (event.key === Qt.Key_Down) {
-                cubePos = Qt.vector3d(cubePos.x, cubePos.y, cubePos.z + step)
-                event.accepted = true
-            } else if (event.key === Qt.Key_PageUp) {
-                cubePos = Qt.vector3d(cubePos.x, cubePos.y + step, cubePos.z)
-                event.accepted = true
-            } else if (event.key === Qt.Key_PageDown) {
-                cubePos = Qt.vector3d(cubePos.x, cubePos.y - step, cubePos.z)
+            if (event.key === Qt.Key_Left
+                    || event.key === Qt.Key_Right
+                    || event.key === Qt.Key_Up
+                    || event.key === Qt.Key_Down
+                    || event.key === Qt.Key_PageUp
+                    || event.key === Qt.Key_PageDown) {
                 event.accepted = true
             }
         }
@@ -163,7 +231,7 @@ Window {
 
         Light {
             type: Light.Ambient
-            color: Qt.vector3d(0.1, 0.1, 0.1)
+            color: Qt.vector3d(0.5, 0.5, 0.5)
             intensity: 1.0
             castShadows: false
         }
@@ -179,6 +247,7 @@ Window {
             castShadows: false
         }
 */
+
         Light {
             type: Light.Spotlight
             position: Qt.vector3d(-1, 5, 0)
@@ -223,6 +292,15 @@ Window {
             beamRadius: 0.3
         }
 /*
+        Light {
+            type: Light.Directional
+            direction: Qt.vector3d(-0.3, -1.0, -0.2)
+            color: Qt.vector3d(1.0, 1.0, 1.0)
+            intensity: 2.0
+            castShadows: true
+        }
+*/
+/*
         Hazer {
             position: Qt.vector3d(0, 1.5, -2.0)
             direction: Qt.vector3d(1, 0, 0)
@@ -251,6 +329,7 @@ Window {
             position: cubePos
             rotationDegrees: Qt.vector3d(0, 0, 0)
             scale: Qt.vector3d(1, 1, 1)
+            baseColor: Qt.vector3d(1, 0, 0)
             Component.onCompleted: root.registerSelectable(this)
             Component.onDestruction: root.unregisterSelectable(this)
         }
@@ -258,6 +337,7 @@ Window {
         // ground plane
         Cube {
             id: groundPlane
+            selectable: false
             position: Qt.vector3d(0, -2.5, 0)
             rotationDegrees: Qt.vector3d(0, 0, 0)
             scale: Qt.vector3d(10, 0.2, 10)
@@ -268,6 +348,7 @@ Window {
         Model {
             id: suzanne
             path: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
+            //path: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/models/Duck.gltf"
             position: Qt.vector3d(1.5, -1.2, 0)
             rotationDegrees: Qt.vector3d(0, -30, 0)
             scale: Qt.vector3d(1, 1, 1)
@@ -275,167 +356,57 @@ Window {
             Component.onDestruction: root.unregisterSelectable(this)
         }
 
+        Sphere {
+            id: metalSphere
+            visible: true
+            position: Qt.vector3d(-1.6, -1.2, 0)
+            scale: Qt.vector3d(1, 1, 1)
+            baseColor: Qt.vector3d(0.9, 0.9, 0.95)
+            emissiveColor: Qt.vector3d(0, 0, 0)
+            metalness: 1.0
+            roughness: 0.15
+            Component.onCompleted: root.registerSelectable(this)
+            Component.onDestruction: root.unregisterSelectable(this)
+        }
+
     }
 
-    Item {
-        id: viewCube
-        width: 120
-        height: 120
+    ViewGizmo {
         anchors.top: parent.top
         anchors.right: parent.right
         anchors.margins: 12
-        z: 10
+        renderer: renderer
+        snapCamera: root.snapCamera
+    }
 
-        property vector3d camForward: Qt.vector3d(0, 0, -1)
-        property vector3d camRight: Qt.vector3d(1, 0, 0)
-        property vector3d camUp: Qt.vector3d(0, 1, 0)
+    Rectangle {
+        id: fpsOverlay
+        visible: root.showFpsOverlay
+        color: "#1a1a1a"
+        opacity: 0.8
+        radius: 6
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.margins: 12
+        width: 220
+        height: 120
 
-        function updateBasis() {
-            var f = vnorm(Qt.vector3d(renderer.cameraTarget.x - renderer.cameraPosition.x,
-                                      renderer.cameraTarget.y - renderer.cameraPosition.y,
-                                      renderer.cameraTarget.z - renderer.cameraPosition.z))
-            var upWorld = Qt.vector3d(0, 1, 0)
-            var r = vcross(f, upWorld)
-            if (vlen(r) < 0.0001)
-                r = vcross(f, Qt.vector3d(0, 0, 1))
-            r = vnorm(r)
-            var u = vnorm(vcross(r, f))
-            camForward = f
-            camRight = r
-            camUp = u
-        }
-
-        Canvas {
-            id: cubeCanvas
+        Text {
             anchors.fill: parent
-            onPaint: {
-                var ctx = getContext("2d")
-                ctx.clearRect(0, 0, width, height)
-                var cx = width * 0.5
-                var cy = height * 0.5
-                var scale = width * 0.32
-
-                function rot(v) {
-                    return Qt.vector3d(
-                        vdot(v, viewCube.camRight),
-                        vdot(v, viewCube.camUp),
-                        vdot(v, Qt.vector3d(-viewCube.camForward.x, -viewCube.camForward.y, -viewCube.camForward.z))
-                    )
-                }
-                function proj(v) {
-                    return Qt.point(cx + v.x * scale, cy - v.y * scale)
-                }
-
-                var verts = [
-                    Qt.vector3d(-1, -1, -1),
-                    Qt.vector3d(1, -1, -1),
-                    Qt.vector3d(1, 1, -1),
-                    Qt.vector3d(-1, 1, -1),
-                    Qt.vector3d(-1, -1, 1),
-                    Qt.vector3d(1, -1, 1),
-                    Qt.vector3d(1, 1, 1),
-                    Qt.vector3d(-1, 1, 1)
-                ]
-                var edges = [
-                    [0, 1], [1, 2], [2, 3], [3, 0],
-                    [4, 5], [5, 6], [6, 7], [7, 4],
-                    [0, 4], [1, 5], [2, 6], [3, 7]
-                ]
-
-                var rverts = []
-                for (var i = 0; i < verts.length; ++i)
-                    rverts.push(rot(verts[i]))
-
-                ctx.lineWidth = 2
-                ctx.strokeStyle = "#f3e86b"
-                ctx.beginPath()
-                for (var e = 0; e < edges.length; ++e) {
-                    var a = proj(rverts[edges[e][0]])
-                    var b = proj(rverts[edges[e][1]])
-                    ctx.moveTo(a.x, a.y)
-                    ctx.lineTo(b.x, b.y)
-                }
-                ctx.stroke()
-            }
-        }
-
-        MouseArea {
-            anchors.fill: parent
-            hoverEnabled: true
-            property point pressPos: Qt.point(0, 0)
-            property bool dragging: false
-
-            onPressed: function(mouse) {
-                pressPos = Qt.point(mouse.x, mouse.y)
-                dragging = false
-            }
-            onPositionChanged: function(mouse) {
-                if (!pressed)
-                    return
-                var dx = mouse.x - pressPos.x
-                var dy = mouse.y - pressPos.y
-                if (!dragging && (Math.abs(dx) > 4 || Math.abs(dy) > 4))
-                    dragging = true
-                if (dragging) {
-                    renderer.rotateFreeCamera(dx * 0.2, -dy * 0.2)
-                    pressPos = Qt.point(mouse.x, mouse.y)
-                }
-            }
-            onReleased: function(mouse) {
-                if (dragging)
-                    return
-                viewCube.updateBasis()
-                var cx = viewCube.width * 0.5
-                var cy = viewCube.height * 0.5
-                var scale = viewCube.width * 0.32
-                var click = Qt.point(mouse.x, mouse.y)
-
-                var faces = [
-                    { axis: Qt.vector3d(1, 0, 0) },
-                    { axis: Qt.vector3d(-1, 0, 0) },
-                    { axis: Qt.vector3d(0, 1, 0) },
-                    { axis: Qt.vector3d(0, -1, 0) },
-                    { axis: Qt.vector3d(0, 0, 1) },
-                    { axis: Qt.vector3d(0, 0, -1) }
-                ]
-
-                function rot(v) {
-                    return Qt.vector3d(
-                        vdot(v, viewCube.camRight),
-                        vdot(v, viewCube.camUp),
-                        vdot(v, Qt.vector3d(-viewCube.camForward.x, -viewCube.camForward.y, -viewCube.camForward.z))
-                    )
-                }
-
-                var best = null
-                var bestDist = 1e9
-                for (var i = 0; i < faces.length; ++i) {
-                    var n = faces[i].axis
-                    var rn = rot(n)
-                    if (rn.z <= 0.0)
-                        continue
-                    var p = Qt.point(cx + rn.x * scale * 0.9, cy - rn.y * scale * 0.9)
-                    var dx = p.x - click.x
-                    var dy = p.y - click.y
-                    var d2 = dx * dx + dy * dy
-                    if (d2 < bestDist) {
-                        bestDist = d2
-                        best = faces[i]
-                    }
-                }
-                if (best && bestDist < (scale * scale * 0.5))
-                    root.snapCamera(best.axis)
-            }
-        }
-
-        Component.onCompleted: {
-            updateBasis()
-            cubeCanvas.requestPaint()
-        }
-        Connections {
-            target: renderer
-            function onCameraPositionChanged() { viewCube.updateBasis(); cubeCanvas.requestPaint() }
-            function onCameraTargetChanged() { viewCube.updateBasis(); cubeCanvas.requestPaint() }
+            anchors.margins: 10
+            color: "#e8e8e8"
+            font.family: "monospace"
+            font.pixelSize: 14
+            text: "FPS\n" +
+                  "  cur: " + root.fpsCurrent.toFixed(1) + "\n" +
+                  "  min: " + root.fpsMin.toFixed(1) +
+                  "  max: " + root.fpsMax.toFixed(1) + "\n" +
+                  "  avg: " + root.fpsAvg.toFixed(1) + "\n" +
+                  "  vol: " + (renderer.volumetricEnabled ? "on" : "off") +
+                  "  shd: " + (renderer.shadowsEnabled ? "on" : "off") +
+                  "  noise: " + (renderer.smokeNoiseEnabled ? "on" : "off")
         }
     }
+
+    onFrameSwapped: updateFps()
 }

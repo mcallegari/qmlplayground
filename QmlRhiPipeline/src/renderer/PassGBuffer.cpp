@@ -1,5 +1,6 @@
 #include "renderer/PassGBuffer.h"
 
+#include <QtGui/QImage>
 #include <QtGui/QMatrix4x4>
 #include <cstring>
 #include <rhi/qrhi.h>
@@ -96,6 +97,10 @@ void PassGBuffer::execute(FrameContext &ctx)
 
     for (Mesh &mesh : ctx.scene->meshes())
     {
+        if (mesh.gizmoAxis >= 0)
+            continue;
+        if (!mesh.visible)
+            continue;
         ensureMeshBuffers(ctx, mesh, u);
         if (!mesh.modelUbo || !mesh.materialUbo)
             continue;
@@ -124,6 +129,10 @@ void PassGBuffer::execute(FrameContext &ctx)
 
     for (Mesh &mesh : ctx.scene->meshes())
     {
+        if (mesh.gizmoAxis >= 0)
+            continue;
+        if (!mesh.visible)
+            continue;
         if (!mesh.vertexBuffer || !mesh.indexBuffer || mesh.indexCount == 0)
             continue;
         if (!mesh.srb)
@@ -169,11 +178,46 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
     if (!m_cameraUbo->create() || !m_modelUbo->create() || !m_materialUbo->create())
         return;
 
+    if (!m_linearSampler)
+    {
+        m_linearSampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Linear,
+                                                     QRhiSampler::Linear,
+                                                     QRhiSampler::Linear,
+                                                     QRhiSampler::Repeat,
+                                                     QRhiSampler::Repeat);
+        if (!m_linearSampler->create())
+            return;
+    }
+    if (!m_defaultBaseColor)
+    {
+        m_defaultBaseColor = ctx.rhi->rhi()->newTexture(QRhiTexture::RGBA8, QSize(1, 1), 1);
+        if (!m_defaultBaseColor->create())
+            return;
+        m_defaultBaseColorUploaded = false;
+    }
+    if (!m_defaultNormal)
+    {
+        m_defaultNormal = ctx.rhi->rhi()->newTexture(QRhiTexture::RGBA8, QSize(1, 1), 1);
+        if (!m_defaultNormal->create())
+            return;
+        m_defaultNormalUploaded = false;
+    }
+    if (!m_defaultMetallicRoughness)
+    {
+        m_defaultMetallicRoughness = ctx.rhi->rhi()->newTexture(QRhiTexture::RGBA8, QSize(1, 1), 1);
+        if (!m_defaultMetallicRoughness->create())
+            return;
+        m_defaultMetallicRoughnessUploaded = false;
+    }
+
     m_srb = ctx.rhi->rhi()->newShaderResourceBindings();
     m_srb->setBindings({
         QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, m_cameraUbo),
         QRhiShaderResourceBinding::uniformBuffer(1, QRhiShaderResourceBinding::VertexStage, m_modelUbo),
-        QRhiShaderResourceBinding::uniformBuffer(2, QRhiShaderResourceBinding::FragmentStage, m_materialUbo)
+        QRhiShaderResourceBinding::uniformBuffer(2, QRhiShaderResourceBinding::FragmentStage, m_materialUbo),
+        QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, m_defaultBaseColor, m_linearSampler),
+        QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage, m_defaultNormal, m_linearSampler),
+        QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage, m_defaultMetallicRoughness, m_linearSampler)
     });
     if (!m_srb->create())
         return;
@@ -245,13 +289,124 @@ void PassGBuffer::ensureMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceU
         if (!mesh.materialUbo->create())
             return;
     }
+    if (m_defaultBaseColor && !m_defaultBaseColorUploaded)
+    {
+        QImage white(1, 1, QImage::Format_RGBA8888);
+        white.fill(Qt::white);
+        QRhiTextureUploadDescription upload(QRhiTextureUploadEntry(0, 0,
+                                                                    QRhiTextureSubresourceUploadDescription(white)));
+        u->uploadTexture(m_defaultBaseColor, upload);
+        m_defaultBaseColorUploaded = true;
+    }
+    if (m_defaultNormal && !m_defaultNormalUploaded)
+    {
+        QImage normal(1, 1, QImage::Format_RGBA8888);
+        normal.fill(QColor(128, 128, 255, 255));
+        QRhiTextureUploadDescription upload(QRhiTextureUploadEntry(0, 0,
+                                                                    QRhiTextureSubresourceUploadDescription(normal)));
+        u->uploadTexture(m_defaultNormal, upload);
+        m_defaultNormalUploaded = true;
+    }
+    if (m_defaultMetallicRoughness && !m_defaultMetallicRoughnessUploaded)
+    {
+        QImage mr(1, 1, QImage::Format_RGBA8888);
+        mr.fill(QColor(0, 255, 0, 255));
+        QRhiTextureUploadDescription upload(QRhiTextureUploadEntry(0, 0,
+                                                                    QRhiTextureSubresourceUploadDescription(mr)));
+        u->uploadTexture(m_defaultMetallicRoughness, upload);
+        m_defaultMetallicRoughnessUploaded = true;
+    }
+    if (!mesh.baseColorTexture)
+    {
+        if (!mesh.material.baseColorMap.isNull())
+        {
+            const QImage image = mesh.material.baseColorMap.convertToFormat(QImage::Format_RGBA8888);
+            if (!image.isNull())
+            {
+                mesh.baseColorTexture = ctx.rhi->rhi()->newTexture(QRhiTexture::RGBA8, image.size(), 1);
+                if (mesh.baseColorTexture->create())
+                {
+                    QRhiTextureUploadDescription upload(QRhiTextureUploadEntry(0, 0,
+                                                                                QRhiTextureSubresourceUploadDescription(image)));
+                    u->uploadTexture(mesh.baseColorTexture, upload);
+                }
+                else
+                {
+                    delete mesh.baseColorTexture;
+                    mesh.baseColorTexture = nullptr;
+                }
+            }
+        }
+        if (!mesh.baseColorTexture)
+            mesh.baseColorTexture = m_defaultBaseColor;
+    }
+    if (!mesh.baseColorSampler)
+        mesh.baseColorSampler = m_linearSampler;
+    if (!mesh.normalTexture)
+    {
+        if (!mesh.material.normalMap.isNull())
+        {
+            const QImage image = mesh.material.normalMap.convertToFormat(QImage::Format_RGBA8888);
+            if (!image.isNull())
+            {
+                mesh.normalTexture = ctx.rhi->rhi()->newTexture(QRhiTexture::RGBA8, image.size(), 1);
+                if (mesh.normalTexture->create())
+                {
+                    QRhiTextureUploadDescription upload(QRhiTextureUploadEntry(0, 0,
+                                                                                QRhiTextureSubresourceUploadDescription(image)));
+                    u->uploadTexture(mesh.normalTexture, upload);
+                }
+                else
+                {
+                    delete mesh.normalTexture;
+                    mesh.normalTexture = nullptr;
+                }
+            }
+        }
+        if (!mesh.normalTexture)
+            mesh.normalTexture = m_defaultNormal;
+    }
+    if (!mesh.normalSampler)
+        mesh.normalSampler = m_linearSampler;
+    if (!mesh.metallicRoughnessTexture)
+    {
+        if (!mesh.material.metallicRoughnessMap.isNull())
+        {
+            const QImage image = mesh.material.metallicRoughnessMap.convertToFormat(QImage::Format_RGBA8888);
+            if (!image.isNull())
+            {
+                mesh.metallicRoughnessTexture = ctx.rhi->rhi()->newTexture(QRhiTexture::RGBA8, image.size(), 1);
+                if (mesh.metallicRoughnessTexture->create())
+                {
+                    QRhiTextureUploadDescription upload(QRhiTextureUploadEntry(0, 0,
+                                                                                QRhiTextureSubresourceUploadDescription(image)));
+                    u->uploadTexture(mesh.metallicRoughnessTexture, upload);
+                }
+                else
+                {
+                    delete mesh.metallicRoughnessTexture;
+                    mesh.metallicRoughnessTexture = nullptr;
+                }
+            }
+        }
+        if (!mesh.metallicRoughnessTexture)
+            mesh.metallicRoughnessTexture = m_defaultMetallicRoughness;
+    }
+    if (!mesh.metallicRoughnessSampler)
+        mesh.metallicRoughnessSampler = m_linearSampler;
     if (!mesh.srb)
     {
         mesh.srb = ctx.rhi->rhi()->newShaderResourceBindings();
         mesh.srb->setBindings({
             QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, m_cameraUbo),
             QRhiShaderResourceBinding::uniformBuffer(1, QRhiShaderResourceBinding::VertexStage, mesh.modelUbo),
-            QRhiShaderResourceBinding::uniformBuffer(2, QRhiShaderResourceBinding::FragmentStage, mesh.materialUbo)
+            QRhiShaderResourceBinding::uniformBuffer(2, QRhiShaderResourceBinding::FragmentStage, mesh.materialUbo),
+            QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage,
+                                                      mesh.baseColorTexture, mesh.baseColorSampler),
+            QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage,
+                                                      mesh.normalTexture, mesh.normalSampler),
+            QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage,
+                                                      mesh.metallicRoughnessTexture, mesh.metallicRoughnessSampler)
         });
         if (!mesh.srb->create())
             return;

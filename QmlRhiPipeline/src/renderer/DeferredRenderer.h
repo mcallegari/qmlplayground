@@ -22,4 +22,5 @@ private:
     RenderGraph m_graph;
     FrameContext m_frameCtx;
     ShadowData m_shadowData;
+    LightCullingData m_lightCulling;
 };

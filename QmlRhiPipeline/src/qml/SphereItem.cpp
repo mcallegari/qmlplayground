@@ -1,11 +1,11 @@
-#include "qml/CubeItem.h"
+#include "qml/SphereItem.h"
 
-CubeItem::CubeItem(QObject *parent)
+SphereItem::SphereItem(QObject *parent)
     : MeshItem(parent)
 {
 }
 
-void CubeItem::setBaseColor(const QVector3D &color)
+void SphereItem::setBaseColor(const QVector3D &color)
 {
     if (m_baseColor == color)
         return;
@@ -14,7 +14,7 @@ void CubeItem::setBaseColor(const QVector3D &color)
     notifyParent();
 }
 
-void CubeItem::setEmissiveColor(const QVector3D &color)
+void SphereItem::setEmissiveColor(const QVector3D &color)
 {
     if (m_emissiveColor == color)
         return;
@@ -23,7 +23,7 @@ void CubeItem::setEmissiveColor(const QVector3D &color)
     notifyParent();
 }
 
-void CubeItem::setMetalness(float metalness)
+void SphereItem::setMetalness(float metalness)
 {
     if (qFuzzyCompare(m_metalness, metalness))
         return;
@@ -32,7 +32,7 @@ void CubeItem::setMetalness(float metalness)
     notifyParent();
 }
 
-void CubeItem::setRoughness(float roughness)
+void SphereItem::setRoughness(float roughness)
 {
     if (qFuzzyCompare(m_roughness, roughness))
         return;

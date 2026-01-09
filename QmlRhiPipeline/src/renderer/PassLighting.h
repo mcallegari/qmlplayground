@@ -34,6 +34,8 @@ private:
     QRhiBuffer *m_cameraUbo = nullptr;
     QRhiBuffer *m_shadowUbo = nullptr;
     QRhiBuffer *m_flipUbo = nullptr;
+    QRhiBuffer *m_lightCullUbo = nullptr;
+    QRhiBuffer *m_lightIndexBuffer = nullptr;
     QRhiRenderPassDescriptor *m_rpDesc = nullptr;
     QRhiTexture *m_shadowMapRefs[3] = { nullptr, nullptr, nullptr };
     QRhiTexture *m_gbufColor0 = nullptr;
@@ -47,6 +49,7 @@ private:
     QString m_spotGoboPaths[kMaxLights];
     QSize m_spotGoboSize = QSize(256, 256);
     bool m_reverseZ = false;
+    bool m_useLightCulling = false;
 
     QRhiGraphicsPipeline *m_selectionPipeline = nullptr;
     QRhiShaderResourceBindings *m_selectionSrb = nullptr;

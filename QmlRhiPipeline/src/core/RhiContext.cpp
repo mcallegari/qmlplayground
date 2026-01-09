@@ -7,6 +7,43 @@
 
 RhiContext::RhiContext() = default;
 
+namespace {
+
+const char *deviceTypeLabel(QRhiDriverInfo::DeviceType type)
+{
+    switch (type)
+    {
+    case QRhiDriverInfo::IntegratedDevice:
+        return "integrated";
+    case QRhiDriverInfo::DiscreteDevice:
+        return "discrete";
+    case QRhiDriverInfo::ExternalDevice:
+        return "external";
+    case QRhiDriverInfo::VirtualDevice:
+        return "virtual";
+    case QRhiDriverInfo::CpuDevice:
+        return "cpu";
+    default:
+        return "unknown";
+    }
+}
+
+void logRhiInfo(const QRhi *rhi)
+{
+    if (!rhi)
+        return;
+    const QRhiDriverInfo info = rhi->driverInfo();
+    const QString name = info.deviceName.isEmpty() ? QStringLiteral("unknown") : QString::fromUtf8(info.deviceName);
+    qInfo().noquote() << QStringLiteral("RHI backend: %1, GPU: %2 (%3), vendor 0x%4 device 0x%5")
+                         .arg(QLatin1String(rhi->backendName()))
+                         .arg(name)
+                         .arg(QLatin1String(deviceTypeLabel(info.deviceType)))
+                         .arg(QString::number(info.vendorId, 16))
+                         .arg(QString::number(info.deviceId, 16));
+}
+
+} // namespace
+
 bool RhiContext::initialize(QWindow *window)
 {
     m_window = window;
@@ -125,6 +162,7 @@ bool RhiContext::initialize(QWindow *window)
             continue;
 
         m_backend = attempt.impl;
+        logRhiInfo(m_rhi);
         break;
     }
 
@@ -160,6 +198,7 @@ bool RhiContext::initializeExternal(QRhi *rhi)
     m_rhi = rhi;
     m_backend = rhi->backend();
     m_ownsRhi = false;
+    logRhiInfo(m_rhi);
     return true;
 }
 
@@ -244,6 +283,5 @@ void RhiContext::clearExternalFrame()
     m_externalCb = nullptr;
     m_externalRt = nullptr;
 }
-
 
 

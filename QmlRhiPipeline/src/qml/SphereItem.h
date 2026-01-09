@@ -2,7 +2,7 @@
 
 #include "qml/MeshItem.h"
 
-class CubeItem : public MeshItem
+class SphereItem : public MeshItem
 {
     Q_OBJECT
     Q_PROPERTY(QVector3D baseColor READ baseColor WRITE setBaseColor NOTIFY baseColorChanged)
@@ -11,8 +11,7 @@ class CubeItem : public MeshItem
     Q_PROPERTY(float roughness READ roughness WRITE setRoughness NOTIFY roughnessChanged)
 
 public:
-    explicit CubeItem(QObject *parent = nullptr);
-
+    explicit SphereItem(QObject *parent = nullptr);
     QVector3D baseColor() const { return m_baseColor; }
     void setBaseColor(const QVector3D &color);
     QVector3D emissiveColor() const { return m_emissiveColor; }

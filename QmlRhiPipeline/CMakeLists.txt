@@ -19,8 +19,12 @@ add_executable(qmlrhipipeline
     src/qml/CubeItem.cpp
     src/qml/HazerItem.cpp
     src/qml/LightItem.cpp
+    src/qml/MeshItem.cpp
+    src/qml/MeshUtils.cpp
     src/qml/ModelItem.cpp
+    src/qml/PickingUtils.cpp
     src/qml/RhiQmlItem.cpp
+    src/qml/SphereItem.cpp
     src/renderer/DeferredRenderer.cpp
     src/renderer/PassDepth.cpp
     src/renderer/PassGBuffer.cpp
@@ -53,8 +57,11 @@ qt_add_shaders(qmlrhipipeline qmlrhipipeline_shaders
     FILES
         shaders/gbuffer.vert
         shaders/gbuffer.frag
+        shaders/gizmo.vert
+        shaders/gizmo.frag
         shaders/lighting.vert
         shaders/lighting.frag
+        shaders/lighting_cull.frag
         shaders/post_bloom_downsample.frag
         shaders/post_bloom_upsample.frag
         shaders/post_combine.frag
@@ -78,4 +85,5 @@ qt_add_resources(qmlrhipipeline qmlrhipipeline_qml
     PREFIX "/"
     FILES
         qml/Main.qml
+        qml/ViewGizmo.qml
 )

@@ -21,6 +21,12 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
 #include <assimp/postprocess.h>
 #include <assimp/material.h>
 #include <functional>
+#include <QtCore/QDir>
+#include <QtCore/QFileInfo>
+#include <QtCore/QLatin1Char>
+#include <QtCore/QUrl>
+#include <QtGui/QColor>
+#include <QtGui/QImage>
 #include <QtGui/QMatrix4x4>
 #include <QtGui/QVector3D>
 #include <QtGui/QVector2D>
@@ -35,7 +41,139 @@ static QMatrix4x4 toQtMatrix(const aiMatrix4x4 &m)
     return out;
 }
 
-static void readMaterial(const aiMaterial *mat, Material &out)
+static QString resolveTexturePath(const QString &modelPath, const QString &texturePath)
+{
+    if (texturePath.isEmpty())
+        return QString();
+    const QUrl url(texturePath);
+    if (url.isValid() && url.isLocalFile())
+        return url.toLocalFile();
+    const QFileInfo textureInfo(texturePath);
+    if (textureInfo.isAbsolute())
+        return texturePath;
+    const QUrl modelUrl(modelPath);
+    const QString modelFile = modelUrl.isValid() && modelUrl.isLocalFile()
+            ? modelUrl.toLocalFile()
+            : modelPath;
+    const QFileInfo modelInfo(modelFile);
+    const QString candidate = QDir(modelInfo.absolutePath()).filePath(texturePath);
+    if (QFileInfo::exists(candidate))
+        return candidate;
+    return QDir::current().filePath(texturePath);
+}
+
+static QString resolveModelPath(const QString &path)
+{
+    const QUrl url(path);
+    QString resolved = (url.isValid() && url.isLocalFile()) ? url.toLocalFile() : path;
+    const QFileInfo info(resolved);
+    if (info.exists())
+        return info.absoluteFilePath();
+    return resolved;
+}
+
+static QImage loadEmbeddedTexture(const aiTexture *texture)
+{
+    if (!texture)
+        return QImage();
+    if (texture->mHeight == 0)
+    {
+        const uchar *data = reinterpret_cast<const uchar *>(texture->pcData);
+        QImage image = QImage::fromData(data, int(texture->mWidth));
+        return image.isNull() ? QImage() : image.convertToFormat(QImage::Format_RGBA8888);
+    }
+    const int width = int(texture->mWidth);
+    const int height = int(texture->mHeight);
+    QImage image(reinterpret_cast<const uchar *>(texture->pcData), width, height, QImage::Format_RGBA8888);
+    return image.copy();
+}
+
+static bool loadTextureFromPath(const aiScene *scene,
+                                const QString &modelPath,
+                                const aiString &texturePath,
+                                QString &outPath,
+                                QImage &outImage)
+{
+    if (texturePath.length == 0)
+        return false;
+    const QString texString = QString::fromUtf8(texturePath.C_Str());
+    if (texString.startsWith(QLatin1Char('*')))
+    {
+        bool ok = false;
+        const int index = texString.mid(1).toInt(&ok);
+        if (ok && scene && index >= 0 && index < int(scene->mNumTextures))
+        {
+            outImage = loadEmbeddedTexture(scene->mTextures[index]);
+            return !outImage.isNull();
+        }
+        return false;
+    }
+    const QString resolved = resolveTexturePath(modelPath, texString);
+    outPath = resolved;
+    QImage image(resolved);
+    if (!image.isNull())
+    {
+        outImage = image.convertToFormat(QImage::Format_RGBA8888);
+        return true;
+    }
+    return false;
+}
+
+static bool loadTextureForType(const aiScene *scene,
+                               const QString &modelPath,
+                               const aiMaterial *mat,
+                               aiTextureType type,
+                               QString &outPath,
+                               QImage &outImage)
+{
+    aiString texturePath;
+    if (aiGetMaterialTexture(mat, type, 0, &texturePath) != AI_SUCCESS)
+        return false;
+    return loadTextureFromPath(scene, modelPath, texturePath, outPath, outImage);
+}
+
+static QImage buildMetallicRoughnessMap(const QImage &metalness, const QImage &roughness)
+{
+    if (metalness.isNull() && roughness.isNull())
+        return QImage();
+
+    const QImage metal = metalness.isNull()
+            ? QImage()
+            : metalness.convertToFormat(QImage::Format_RGBA8888);
+    const QImage rough = roughness.isNull()
+            ? QImage()
+            : roughness.convertToFormat(QImage::Format_RGBA8888);
+
+    QSize size;
+    if (!metal.isNull())
+        size = metal.size();
+    else
+        size = rough.size();
+
+    QImage metalScaled = metal;
+    QImage roughScaled = rough;
+    if (!metalScaled.isNull() && metalScaled.size() != size)
+        metalScaled = metalScaled.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+    if (!roughScaled.isNull() && roughScaled.size() != size)
+        roughScaled = roughScaled.scaled(size, Qt::IgnoreAspectRatio, Qt::SmoothTransformation);
+
+    QImage combined(size, QImage::Format_RGBA8888);
+    for (int y = 0; y < size.height(); ++y)
+    {
+        const QRgb *metalLine = metalScaled.isNull() ? nullptr : reinterpret_cast<const QRgb *>(metalScaled.constScanLine(y));
+        const QRgb *roughLine = roughScaled.isNull() ? nullptr : reinterpret_cast<const QRgb *>(roughScaled.constScanLine(y));
+        QRgb *outLine = reinterpret_cast<QRgb *>(combined.scanLine(y));
+        for (int x = 0; x < size.width(); ++x)
+        {
+            const int metalValue = metalLine ? qRed(metalLine[x]) : 0;
+            const int roughValue = roughLine ? qRed(roughLine[x]) : 255;
+            outLine[x] = qRgba(0, roughValue, metalValue, 255);
+        }
+    }
+    return combined;
+}
+
+static void readMaterial(const aiScene *scene, const QString &modelPath, const aiMaterial *mat, Material &out)
 {
     aiColor4D color;
     if (aiGetMaterialColor(mat, AI_MATKEY_BASE_COLOR, &color) == AI_SUCCESS)
@@ -53,6 +191,38 @@ static void readMaterial(const aiMaterial *mat, Material &out)
 
     if (aiGetMaterialColor(mat, AI_MATKEY_COLOR_EMISSIVE, &color) == AI_SUCCESS)
         out.emissive = QVector3D(color.r, color.g, color.b);
+
+    loadTextureForType(scene, modelPath, mat, aiTextureType_BASE_COLOR, out.baseColorMapPath, out.baseColorMap);
+    if (out.baseColorMap.isNull())
+        loadTextureForType(scene, modelPath, mat, aiTextureType_DIFFUSE, out.baseColorMapPath, out.baseColorMap);
+
+    loadTextureForType(scene, modelPath, mat, aiTextureType_NORMALS, out.normalMapPath, out.normalMap);
+    if (out.normalMap.isNull())
+        loadTextureForType(scene, modelPath, mat, aiTextureType_HEIGHT, out.normalMapPath, out.normalMap);
+
+    QString metalPath;
+    QString roughPath;
+    QImage metalImage;
+    QImage roughImage;
+    if (loadTextureForType(scene, modelPath, mat, aiTextureType_UNKNOWN,
+                           out.metallicRoughnessMapPath, out.metallicRoughnessMap))
+        return;
+    const bool hasMetal = loadTextureForType(scene, modelPath, mat, aiTextureType_METALNESS, metalPath, metalImage);
+    const bool hasRough = loadTextureForType(scene, modelPath, mat, aiTextureType_DIFFUSE_ROUGHNESS, roughPath, roughImage);
+
+    if (hasMetal || hasRough)
+    {
+        out.metallicRoughnessMap = buildMetallicRoughnessMap(metalImage, roughImage);
+        if (hasMetal)
+            out.metallicRoughnessMapPath = metalPath;
+        else
+            out.metallicRoughnessMapPath = roughPath;
+    }
+    else
+    {
+        loadTextureForType(scene, modelPath, mat, aiTextureType_UNKNOWN,
+                           out.metallicRoughnessMapPath, out.metallicRoughnessMap);
+    }
 }
 
 bool AssimpLoader::loadModel(const QString &path, Scene &scene)
@@ -66,7 +236,8 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
         scene.meshes().clear();
 
     Assimp::Importer importer;
-    const aiScene *ai = importer.ReadFile(path.toStdString(),
+    const QString resolvedPath = resolveModelPath(path);
+    const aiScene *ai = importer.ReadFile(resolvedPath.toStdString(),
                                          aiProcess_Triangulate |
                                          aiProcess_GenNormals |
                                          aiProcess_CalcTangentSpace |
@@ -143,7 +314,7 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
             if (m->mMaterialIndex < ai->mNumMaterials)
             {
                 const aiMaterial *mat = ai->mMaterials[m->mMaterialIndex];
-                readMaterial(mat, mesh.material);
+                readMaterial(ai, resolvedPath, mat, mesh.material);
             }
 
             scene.meshes().push_back(mesh);

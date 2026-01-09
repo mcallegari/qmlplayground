@@ -8,10 +8,10 @@
 #include <QtMath>
 #include <memory>
 #include <QtGui/QMatrix4x4>
+#include <QtGui/QGuiApplication>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QQuaternion>
 #include <QtGui/QKeyEvent>
-#include <limits>
 
 #include "core/RhiContext.h"
 #include "core/RenderTargetCache.h"
@@ -23,286 +23,13 @@
 #include "qml/HazerItem.h"
 #include "qml/ModelItem.h"
 #include "qml/CubeItem.h"
+#include "qml/SphereItem.h"
+#include "qml/MeshUtils.h"
+#include "qml/PickingUtils.h"
 
 namespace
 {
-
-struct PickHit
-{
-    int meshIndex = -1;
-    QVector3D worldPos;
-    float distance = std::numeric_limits<float>::max();
-};
-
-enum class PickFilter
-{
-    SelectableOnly,
-    GizmosOnly
-};
-
-bool computeRay(const Scene &scene, QRhi *rhi, const QPointF &normPos,
-                QVector3D &origin, QVector3D &dir)
-{
-    if (!rhi)
-        return false;
-
-    QMatrix4x4 viewProj = rhi->clipSpaceCorrMatrix()
-            * scene.camera().projectionMatrix()
-            * scene.camera().viewMatrix();
-    bool invertible = false;
-    const QMatrix4x4 invViewProj = viewProj.inverted(&invertible);
-    if (!invertible)
-        return false;
-
-    const float x = (2.0f * float(normPos.x()) - 1.0f);
-    const float y = 1.0f - (2.0f * float(normPos.y()));
-    const float zNear = rhi->isClipDepthZeroToOne() ? 0.0f : -1.0f;
-    const float zFar = 1.0f;
-
-    QVector4D nearClip(x, y, zNear, 1.0f);
-    QVector4D farClip(x, y, zFar, 1.0f);
-    QVector4D nearWorld = invViewProj * nearClip;
-    QVector4D farWorld = invViewProj * farClip;
-    if (qFuzzyIsNull(nearWorld.w()) || qFuzzyIsNull(farWorld.w()))
-        return false;
-
-    nearWorld /= nearWorld.w();
-    farWorld /= farWorld.w();
-
-    origin = nearWorld.toVector3D();
-    dir = (farWorld - nearWorld).toVector3D().normalized();
-    if (dir.isNull())
-        return false;
-
-    return true;
-}
-
-bool rayAabbIntersection(const QVector3D &origin, const QVector3D &dir,
-                         const QVector3D &minV, const QVector3D &maxV,
-                         float &tNear, float &tFar)
-{
-    tNear = 0.0f;
-    tFar = std::numeric_limits<float>::max();
-
-    for (int axis = 0; axis < 3; ++axis)
-    {
-        const float o = axis == 0 ? origin.x() : (axis == 1 ? origin.y() : origin.z());
-        const float d = axis == 0 ? dir.x() : (axis == 1 ? dir.y() : dir.z());
-        const float minA = axis == 0 ? minV.x() : (axis == 1 ? minV.y() : minV.z());
-        const float maxA = axis == 0 ? maxV.x() : (axis == 1 ? maxV.y() : maxV.z());
-
-        if (qFuzzyIsNull(d))
-        {
-            if (o < minA || o > maxA)
-                return false;
-            continue;
-        }
-
-        float t1 = (minA - o) / d;
-        float t2 = (maxA - o) / d;
-        if (t1 > t2)
-            std::swap(t1, t2);
-        tNear = qMax(tNear, t1);
-        tFar = qMin(tFar, t2);
-        if (tNear > tFar)
-            return false;
-    }
-    return tFar >= 0.0f;
-}
-
-bool rayTriangleIntersection(const QVector3D &origin, const QVector3D &dir,
-                             const QVector3D &v0, const QVector3D &v1, const QVector3D &v2,
-                             float &tOut)
-{
-    const float eps = 1e-6f;
-    const QVector3D e1 = v1 - v0;
-    const QVector3D e2 = v2 - v0;
-    const QVector3D p = QVector3D::crossProduct(dir, e2);
-    const float det = QVector3D::dotProduct(e1, p);
-    if (qAbs(det) < eps)
-        return false;
-    const float invDet = 1.0f / det;
-    const QVector3D t = origin - v0;
-    const float u = QVector3D::dotProduct(t, p) * invDet;
-    if (u < 0.0f || u > 1.0f)
-        return false;
-    const QVector3D q = QVector3D::crossProduct(t, e1);
-    const float v = QVector3D::dotProduct(dir, q) * invDet;
-    if (v < 0.0f || (u + v) > 1.0f)
-        return false;
-    const float tHit = QVector3D::dotProduct(e2, q) * invDet;
-    if (tHit <= eps)
-        return false;
-    tOut = tHit;
-    return true;
-}
-
-float closestAxisT(const QVector3D &rayOrigin, const QVector3D &rayDir,
-                   const QVector3D &axisOrigin, const QVector3D &axisDir)
-{
-    const float a = QVector3D::dotProduct(rayDir, rayDir);
-    const float b = QVector3D::dotProduct(rayDir, axisDir);
-    const float c = QVector3D::dotProduct(axisDir, axisDir);
-    const QVector3D w0 = rayOrigin - axisOrigin;
-    const float d = QVector3D::dotProduct(rayDir, w0);
-    const float e = QVector3D::dotProduct(axisDir, w0);
-    const float denom = a * c - b * b;
-    if (qFuzzyIsNull(denom))
-        return -e / c;
-    return (a * e - b * d) / denom;
-}
-
-Mesh createUnitCubeMesh()
-{
-    Mesh mesh;
-    const float h = 0.5f;
-    mesh.vertices = {
-        // +Z
-        { -h, -h,  h,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f },
-        {  h, -h,  h,  0.0f, 0.0f, 1.0f,  1.0f, 0.0f },
-        {  h,  h,  h,  0.0f, 0.0f, 1.0f,  1.0f, 1.0f },
-        { -h,  h,  h,  0.0f, 0.0f, 1.0f,  0.0f, 1.0f },
-        // -Z
-        {  h, -h, -h,  0.0f, 0.0f, -1.0f, 0.0f, 0.0f },
-        { -h, -h, -h,  0.0f, 0.0f, -1.0f, 1.0f, 0.0f },
-        { -h,  h, -h,  0.0f, 0.0f, -1.0f, 1.0f, 1.0f },
-        {  h,  h, -h,  0.0f, 0.0f, -1.0f, 0.0f, 1.0f },
-        // +X
-        {  h, -h,  h,  1.0f, 0.0f, 0.0f,  0.0f, 0.0f },
-        {  h, -h, -h,  1.0f, 0.0f, 0.0f,  1.0f, 0.0f },
-        {  h,  h, -h,  1.0f, 0.0f, 0.0f,  1.0f, 1.0f },
-        {  h,  h,  h,  1.0f, 0.0f, 0.0f,  0.0f, 1.0f },
-        // -X
-        { -h, -h, -h, -1.0f, 0.0f, 0.0f,  0.0f, 0.0f },
-        { -h, -h,  h, -1.0f, 0.0f, 0.0f,  1.0f, 0.0f },
-        { -h,  h,  h, -1.0f, 0.0f, 0.0f,  1.0f, 1.0f },
-        { -h,  h, -h, -1.0f, 0.0f, 0.0f,  0.0f, 1.0f },
-        // +Y
-        { -h,  h,  h,  0.0f, 1.0f, 0.0f,  0.0f, 0.0f },
-        {  h,  h,  h,  0.0f, 1.0f, 0.0f,  1.0f, 0.0f },
-        {  h,  h, -h,  0.0f, 1.0f, 0.0f,  1.0f, 1.0f },
-        { -h,  h, -h,  0.0f, 1.0f, 0.0f,  0.0f, 1.0f },
-        // -Y
-        { -h, -h, -h,  0.0f, -1.0f, 0.0f, 0.0f, 0.0f },
-        {  h, -h, -h,  0.0f, -1.0f, 0.0f, 1.0f, 0.0f },
-        {  h, -h,  h,  0.0f, -1.0f, 0.0f, 1.0f, 1.0f },
-        { -h, -h,  h,  0.0f, -1.0f, 0.0f, 0.0f, 1.0f }
-    };
-    mesh.indices = {
-        0, 1, 2, 0, 2, 3,
-        4, 5, 6, 4, 6, 7,
-        8, 9, 10, 8, 10, 11,
-        12, 13, 14, 12, 14, 15,
-        16, 17, 18, 16, 18, 19,
-        20, 21, 22, 20, 22, 23
-    };
-    mesh.indexCount = mesh.indices.size();
-    mesh.modelMatrix.setToIdentity();
-    mesh.baseModelMatrix = mesh.modelMatrix;
-    mesh.boundsMin = QVector3D(-h, -h, -h);
-    mesh.boundsMax = QVector3D(h, h, h);
-    mesh.boundsValid = true;
-    return mesh;
-}
-
-bool pickSceneMesh(const Scene &scene, QRhi *rhi, const QPointF &normPos,
-                   PickFilter filter, PickHit &hit)
-{
-    QVector3D origin;
-    QVector3D dir;
-    if (!computeRay(scene, rhi, normPos, origin, dir))
-        return false;
-
-    const auto &meshes = scene.meshes();
-    for (int meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
-    {
-        const Mesh &mesh = meshes[meshIndex];
-        if (filter == PickFilter::SelectableOnly && !mesh.selectable)
-            continue;
-        if (filter == PickFilter::GizmosOnly && mesh.gizmoAxis < 0)
-            continue;
-        if (mesh.vertices.isEmpty())
-            continue;
-
-        bool invOk = false;
-        const QMatrix4x4 invModel = mesh.modelMatrix.inverted(&invOk);
-        if (!invOk)
-            continue;
-
-        const QVector3D originLocal = (invModel * QVector4D(origin, 1.0f)).toVector3D();
-        QVector3D dirLocal = (invModel * QVector4D(dir, 0.0f)).toVector3D();
-        if (dirLocal.isNull())
-            continue;
-        dirLocal.normalize();
-
-        QVector3D minV = mesh.boundsMin;
-        QVector3D maxV = mesh.boundsMax;
-        if (!mesh.boundsValid)
-        {
-            minV = QVector3D(mesh.vertices[0].px, mesh.vertices[0].py, mesh.vertices[0].pz);
-            maxV = minV;
-            for (const Vertex &v : mesh.vertices)
-            {
-                minV.setX(qMin(minV.x(), v.px));
-                minV.setY(qMin(minV.y(), v.py));
-                minV.setZ(qMin(minV.z(), v.pz));
-                maxV.setX(qMax(maxV.x(), v.px));
-                maxV.setY(qMax(maxV.y(), v.py));
-                maxV.setZ(qMax(maxV.z(), v.pz));
-            }
-        }
-
-        float tNear = 0.0f;
-        float tFar = 0.0f;
-        if (!rayAabbIntersection(originLocal, dirLocal, minV, maxV, tNear, tFar))
-            continue;
-
-        auto getVertex = [&](int idx)
-        {
-            const Vertex &v = mesh.vertices[idx];
-            return QVector3D(v.px, v.py, v.pz);
-        };
-
-        auto testTriangle = [&](const QVector3D &v0, const QVector3D &v1, const QVector3D &v2)
-        {
-            float tHit = 0.0f;
-            if (!rayTriangleIntersection(originLocal, dirLocal, v0, v1, v2, tHit))
-                return;
-            const QVector3D localHit = originLocal + dirLocal * tHit;
-            const QVector3D worldHit = (mesh.modelMatrix * QVector4D(localHit, 1.0f)).toVector3D();
-            const float dist = (worldHit - origin).length();
-            if (dist < hit.distance)
-            {
-                hit.distance = dist;
-                hit.meshIndex = meshIndex;
-                hit.worldPos = worldHit;
-            }
-        };
-
-        if (!mesh.indices.isEmpty())
-        {
-            for (int i = 0; i + 2 < mesh.indices.size(); i += 3)
-            {
-                const QVector3D v0 = getVertex(int(mesh.indices[i]));
-                const QVector3D v1 = getVertex(int(mesh.indices[i + 1]));
-                const QVector3D v2 = getVertex(int(mesh.indices[i + 2]));
-                testTriangle(v0, v1, v2);
-            }
-        }
-        else
-        {
-            for (int i = 0; i + 2 < mesh.vertices.size(); i += 3)
-            {
-                const QVector3D v0 = getVertex(i);
-                const QVector3D v1 = getVertex(i + 1);
-                const QVector3D v2 = getVertex(i + 2);
-                testTriangle(v0, v1, v2);
-            }
-        }
-    }
-
-    return hit.meshIndex >= 0;
-}
+using namespace RhiQmlUtils;
 
 class RhiQmlItemRenderer final : public QQuickRhiItemRenderer
 {
@@ -430,6 +157,20 @@ public:
                     for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
                         m_scene.meshes()[i].selected = selected;
                 }
+                const bool selectable = modelItem->selectable();
+                if (record.selectable != selectable)
+                {
+                    record.selectable = selectable;
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                        m_scene.meshes()[i].selectable = selectable;
+                }
+                const bool visible = modelItem->visible();
+                if (record.visible != visible)
+                {
+                    record.visible = visible;
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                        m_scene.meshes()[i].visible = visible;
+                }
                 break;
             }
             if (found)
@@ -449,6 +190,8 @@ public:
             record.rotationDegrees = modelItem->rotationDegrees();
             record.scale = modelItem->scale();
             record.selected = modelItem->isSelected();
+            record.selectable = modelItem->selectable();
+            record.visible = modelItem->visible();
             record.firstMesh = beforeCount;
             record.meshCount = meshCount;
 
@@ -469,6 +212,8 @@ public:
                 mesh.modelMatrix = transform * mesh.baseModelMatrix;
                 mesh.userOffset = record.position;
                 mesh.selected = record.selected;
+                mesh.selectable = record.selectable;
+                mesh.visible = record.visible;
             }
             m_qmlModels.push_back(record);
         }
@@ -507,15 +252,23 @@ public:
                 }
                 const QVector3D baseColor = cubeItem->baseColor();
                 const QVector3D emissiveColor = cubeItem->emissiveColor();
-                if (record.baseColor != baseColor || record.emissiveColor != emissiveColor)
+                const float metalness = cubeItem->metalness();
+                const float roughness = cubeItem->roughness();
+                if (record.baseColor != baseColor || record.emissiveColor != emissiveColor
+                        || !qFuzzyCompare(record.metalness, metalness)
+                        || !qFuzzyCompare(record.roughness, roughness))
                 {
                     record.baseColor = baseColor;
                     record.emissiveColor = emissiveColor;
+                    record.metalness = metalness;
+                    record.roughness = roughness;
                     for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
                     {
                         Mesh &mesh = m_scene.meshes()[i];
                         mesh.material.baseColor = baseColor;
                         mesh.material.emissive = emissiveColor;
+                        mesh.material.metalness = metalness;
+                        mesh.material.roughness = roughness;
                     }
                 }
                 const bool selected = cubeItem->isSelected();
@@ -524,6 +277,20 @@ public:
                     record.selected = selected;
                     for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
                         m_scene.meshes()[i].selected = selected;
+                }
+                const bool selectable = cubeItem->selectable();
+                if (record.selectable != selectable)
+                {
+                    record.selectable = selectable;
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                        m_scene.meshes()[i].selectable = selectable;
+                }
+                const bool visible = cubeItem->visible();
+                if (record.visible != visible)
+                {
+                    record.visible = visible;
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                        m_scene.meshes()[i].visible = visible;
                 }
                 break;
             }
@@ -539,8 +306,12 @@ public:
             record.rotationDegrees = cubeItem->rotationDegrees();
             record.scale = cubeItem->scale();
             record.selected = cubeItem->isSelected();
+            record.selectable = cubeItem->selectable();
+            record.visible = cubeItem->visible();
             record.baseColor = cubeItem->baseColor();
             record.emissiveColor = cubeItem->emissiveColor();
+            record.metalness = cubeItem->metalness();
+            record.roughness = cubeItem->roughness();
             record.firstMesh = beforeCount;
             record.meshCount = meshCount;
 
@@ -561,10 +332,138 @@ public:
                 mesh.modelMatrix = transform * mesh.baseModelMatrix;
                 mesh.userOffset = record.position;
                 mesh.selected = record.selected;
+                mesh.selectable = record.selectable;
+                mesh.visible = record.visible;
                 mesh.material.baseColor = record.baseColor;
                 mesh.material.emissive = record.emissiveColor;
+                mesh.material.metalness = record.metalness;
+                mesh.material.roughness = record.roughness;
             }
             m_qmlCubes.push_back(record);
+        }
+
+        const auto qmlSpheres = qmlItem->findChildren<SphereItem *>(QString(), Qt::FindChildrenRecursively);
+        for (const SphereItem *sphereItem : qmlSpheres)
+        {
+            bool found = false;
+            for (SphereRecord &record : m_qmlSpheres)
+            {
+                if (record.item != sphereItem)
+                    continue;
+                found = true;
+                if (record.position != sphereItem->position()
+                        || record.rotationDegrees != sphereItem->rotationDegrees()
+                        || record.scale != sphereItem->scale())
+                {
+                    record.position = sphereItem->position();
+                    record.rotationDegrees = sphereItem->rotationDegrees();
+                    record.scale = sphereItem->scale();
+                    QMatrix4x4 transform;
+                    transform.translate(record.position);
+                    if (!record.rotationDegrees.isNull())
+                    {
+                        const QQuaternion rot = QQuaternion::fromEulerAngles(record.rotationDegrees);
+                        transform.rotate(rot);
+                    }
+                    if (record.scale != QVector3D(1.0f, 1.0f, 1.0f))
+                        transform.scale(record.scale);
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                    {
+                        Mesh &mesh = m_scene.meshes()[i];
+                        mesh.modelMatrix = transform * mesh.baseModelMatrix;
+                        mesh.userOffset = record.position;
+                    }
+                }
+                const QVector3D baseColor = sphereItem->baseColor();
+                const QVector3D emissiveColor = sphereItem->emissiveColor();
+                const float metalness = sphereItem->metalness();
+                const float roughness = sphereItem->roughness();
+                if (record.baseColor != baseColor || record.emissiveColor != emissiveColor
+                        || !qFuzzyCompare(record.metalness, metalness)
+                        || !qFuzzyCompare(record.roughness, roughness))
+                {
+                    record.baseColor = baseColor;
+                    record.emissiveColor = emissiveColor;
+                    record.metalness = metalness;
+                    record.roughness = roughness;
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                    {
+                        Mesh &mesh = m_scene.meshes()[i];
+                        mesh.material.baseColor = baseColor;
+                        mesh.material.emissive = emissiveColor;
+                        mesh.material.metalness = metalness;
+                        mesh.material.roughness = roughness;
+                    }
+                }
+                const bool selected = sphereItem->isSelected();
+                if (record.selected != selected)
+                {
+                    record.selected = selected;
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                        m_scene.meshes()[i].selected = selected;
+                }
+                const bool selectable = sphereItem->selectable();
+                if (record.selectable != selectable)
+                {
+                    record.selectable = selectable;
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                        m_scene.meshes()[i].selectable = selectable;
+                }
+                const bool visible = sphereItem->visible();
+                if (record.visible != visible)
+                {
+                    record.visible = visible;
+                    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+                        m_scene.meshes()[i].visible = visible;
+                }
+                break;
+            }
+            if (found)
+                continue;
+
+            const int beforeCount = m_scene.meshes().size();
+            m_scene.meshes().push_back(createSphereMesh());
+            const int meshCount = m_scene.meshes().size() - beforeCount;
+            SphereRecord record;
+            record.item = sphereItem;
+            record.position = sphereItem->position();
+            record.rotationDegrees = sphereItem->rotationDegrees();
+            record.scale = sphereItem->scale();
+            record.selected = sphereItem->isSelected();
+            record.selectable = sphereItem->selectable();
+            record.visible = sphereItem->visible();
+            record.baseColor = sphereItem->baseColor();
+            record.emissiveColor = sphereItem->emissiveColor();
+            record.metalness = sphereItem->metalness();
+            record.roughness = sphereItem->roughness();
+            record.firstMesh = beforeCount;
+            record.meshCount = meshCount;
+
+            QMatrix4x4 transform;
+            transform.translate(record.position);
+            if (!record.rotationDegrees.isNull())
+            {
+                const QQuaternion rot = QQuaternion::fromEulerAngles(record.rotationDegrees);
+                transform.rotate(rot);
+            }
+            if (record.scale != QVector3D(1.0f, 1.0f, 1.0f))
+                transform.scale(record.scale);
+
+            for (int i = beforeCount; i < m_scene.meshes().size(); ++i)
+            {
+                Mesh &mesh = m_scene.meshes()[i];
+                mesh.baseModelMatrix = mesh.modelMatrix;
+                mesh.modelMatrix = transform * mesh.baseModelMatrix;
+                mesh.userOffset = record.position;
+                mesh.selected = record.selected;
+                mesh.selectable = record.selectable;
+                mesh.visible = record.visible;
+                mesh.material.baseColor = record.baseColor;
+                mesh.material.emissive = record.emissiveColor;
+                mesh.material.metalness = record.metalness;
+                mesh.material.roughness = record.roughness;
+            }
+            m_qmlSpheres.push_back(record);
         }
 
         m_scene.lights().clear();
@@ -602,6 +501,10 @@ public:
         m_scene.setBeamModel(static_cast<Scene::BeamModel>(qmlItem->beamModel()));
         m_scene.setBloomIntensity(qmlItem->bloomIntensity());
         m_scene.setBloomRadius(qmlItem->bloomRadius());
+        m_scene.setTimeSeconds(qmlItem->smokeTimeSeconds());
+        m_scene.setVolumetricEnabled(qmlItem->volumetricEnabled());
+        m_scene.setShadowsEnabled(qmlItem->shadowsEnabled());
+        m_scene.setSmokeNoiseEnabled(qmlItem->smokeNoiseEnabled());
 
         const HazerItem *hazer = qmlItem->findChild<HazerItem *>(QString(), Qt::FindChildrenRecursively);
         if (hazer && hazer->enabled())
@@ -619,18 +522,8 @@ public:
             m_scene.setHazeDensity(0.0f);
         }
 
-        QObject *selectedItem = qmlItem->selectedItem();
         QVector3D selectedPos;
-        bool hasSelected = false;
-        if (selectedItem)
-        {
-            const QVariant posVar = selectedItem->property("position");
-            if (posVar.isValid() && posVar.canConvert<QVector3D>())
-            {
-                selectedPos = posVar.value<QVector3D>();
-                hasSelected = true;
-            }
-        }
+        bool hasSelected = computeSelectionCenter(selectedPos);
 
         ensureGizmoMeshes();
 
@@ -654,18 +547,42 @@ public:
                         QVector3D rayDir;
                         if (computeRay(m_scene, m_rhiContext.rhi(), drag.normPos, rayOrigin, rayDir))
                         {
-                            m_axisDragActive = true;
-                            m_axisDrag = mesh.gizmoAxis;
-                            m_dragItem = selectedItem;
-                            m_dragOrigin = selectedPos;
-                            m_dragStartPos = selectedPos;
-                            m_dragStartT = closestAxisT(rayOrigin, rayDir, selectedPos, axisDir);
-                            skipPick = true;
+                            m_axisDragActive = false;
+                            m_rotateDragActive = false;
+                            m_axisDrag = -1;
+                            m_rotateAxis = -1;
+                            buildDragSelection();
+                            if (mesh.gizmoType == 2)
+                            {
+                                QVector3D hitPoint;
+                                if (rayPlaneIntersection(rayOrigin, rayDir, selectedPos, axisDir, hitPoint))
+                                {
+                                    QVector3D startVec = hitPoint - selectedPos;
+                                    startVec -= axisDir * QVector3D::dotProduct(startVec, axisDir);
+                                    if (!startVec.isNull())
+                                    {
+                                        startVec.normalize();
+                                        m_rotateDragActive = true;
+                                        m_rotateAxis = mesh.gizmoAxis;
+                                        m_rotateStartVec = startVec;
+                                        m_dragOrigin = selectedPos;
+                                        skipPick = true;
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                m_axisDragActive = true;
+                                m_axisDrag = mesh.gizmoAxis;
+                                m_dragOrigin = selectedPos;
+                                m_dragStartT = closestAxisT(rayOrigin, rayDir, selectedPos, axisDir);
+                                skipPick = true;
+                            }
                         }
                     }
                 }
             }
-            else if (drag.type == DragMove && m_axisDragActive && m_dragItem)
+            else if (drag.type == DragMove && m_axisDragActive && !m_dragSelection.isEmpty())
             {
                 const QVector3D axisDir = axisVector(m_axisDrag);
                 QVector3D rayOrigin;
@@ -674,19 +591,69 @@ public:
                 {
                     const float t = closestAxisT(rayOrigin, rayDir, m_dragOrigin, axisDir);
                     const float delta = t - m_dragStartT;
-                    const QVector3D newPos = m_dragStartPos + axisDir * delta;
-                    selectedPos = newPos;
+                    const QVector3D newCenter = m_dragOrigin + axisDir * delta;
+                    selectedPos = newCenter;
                     hasSelected = true;
-                    QMetaObject::invokeMethod(qmlItem, "setObjectPosition", Qt::QueuedConnection,
-                                              Q_ARG(QObject *, m_dragItem),
-                                              Q_ARG(QVector3D, newPos));
+                    for (const SelectedTransform &entry : m_dragSelection)
+                    {
+                        const QVector3D newPos = entry.startPos + axisDir * delta;
+                        QMetaObject::invokeMethod(qmlItem, "setObjectPosition", Qt::QueuedConnection,
+                                                  Q_ARG(QObject *, entry.item),
+                                                  Q_ARG(QVector3D, newPos));
+                    }
+                }
+            }
+            else if (drag.type == DragMove && m_rotateDragActive && !m_dragSelection.isEmpty())
+            {
+                const QVector3D axisDir = axisVector(m_rotateAxis);
+                QVector3D rayOrigin;
+                QVector3D rayDir;
+                if (computeRay(m_scene, m_rhiContext.rhi(), drag.normPos, rayOrigin, rayDir))
+                {
+                    QVector3D hitPoint;
+                    if (rayPlaneIntersection(rayOrigin, rayDir, m_dragOrigin, axisDir, hitPoint))
+                    {
+                        QVector3D currVec = hitPoint - m_dragOrigin;
+                        currVec -= axisDir * QVector3D::dotProduct(currVec, axisDir);
+                        if (!currVec.isNull())
+                        {
+                            currVec.normalize();
+                            const float dot = QVector3D::dotProduct(m_rotateStartVec, currVec);
+                            const QVector3D cross = QVector3D::crossProduct(m_rotateStartVec, currVec);
+                            const float sign = QVector3D::dotProduct(axisDir, cross) >= 0.0f ? 1.0f : -1.0f;
+                            const float angleRad = qAtan2(cross.length() * sign, qBound(-1.0f, dot, 1.0f));
+                            const float angleDeg = qRadiansToDegrees(angleRad);
+                            const QQuaternion rot = QQuaternion::fromAxisAndAngle(axisDir, angleDeg);
+                            for (const SelectedTransform &entry : m_dragSelection)
+                            {
+                                QVector3D newRot = entry.startRot;
+                                if (m_rotateAxis == 0)
+                                    newRot.setX(entry.startRot.x() + angleDeg);
+                                else if (m_rotateAxis == 1)
+                                    newRot.setY(entry.startRot.y() + angleDeg);
+                                else
+                                    newRot.setZ(entry.startRot.z() + angleDeg);
+                                const QVector3D offset = entry.startPos - m_dragOrigin;
+                                const QVector3D newPos = m_dragOrigin + rot.rotatedVector(offset);
+                                QMetaObject::invokeMethod(qmlItem, "setObjectPosition", Qt::QueuedConnection,
+                                                          Q_ARG(QObject *, entry.item),
+                                                          Q_ARG(QVector3D, newPos));
+                                QMetaObject::invokeMethod(qmlItem, "setObjectRotation", Qt::QueuedConnection,
+                                                          Q_ARG(QObject *, entry.item),
+                                                          Q_ARG(QVector3D, newRot));
+                            }
+                            selectedPos = m_dragOrigin;
+                        }
+                    }
                 }
             }
             else if (drag.type == DragEnd)
             {
                 m_axisDragActive = false;
+                m_rotateDragActive = false;
                 m_axisDrag = -1;
-                m_dragItem = nullptr;
+                m_rotateAxis = -1;
+                m_dragSelection.clear();
             }
         }
 
@@ -701,7 +668,7 @@ public:
             {
                 PickHit hit;
                 const bool hitOk = pickSceneMesh(m_scene, m_rhiContext.rhi(), pick.normPos,
-                                                 PickFilter::SelectableOnly, hit);
+                                                 PickFilter::All, hit);
 
                 QObject *hitItem = nullptr;
                 if (hitOk)
@@ -727,12 +694,25 @@ public:
                             }
                         }
                     }
+                    if (!hitItem)
+                    {
+                        for (const SphereRecord &record : m_qmlSpheres)
+                        {
+                            if (hit.meshIndex >= record.firstMesh
+                                    && hit.meshIndex < record.firstMesh + record.meshCount)
+                            {
+                                hitItem = const_cast<SphereItem *>(record.item);
+                                break;
+                            }
+                        }
+                    }
                 }
 
                 QMetaObject::invokeMethod(qmlItem, "dispatchPickResult", Qt::QueuedConnection,
                                           Q_ARG(QObject *, hitItem),
                                           Q_ARG(QVector3D, hitOk ? hit.worldPos : QVector3D()),
-                                          Q_ARG(bool, hitOk));
+                                          Q_ARG(bool, hitOk),
+                                          Q_ARG(int, int(pick.modifiers)));
             }
         }
     }
@@ -770,6 +750,8 @@ private:
         QVector3D rotationDegrees;
         QVector3D scale;
         bool selected = false;
+        bool selectable = true;
+        bool visible = true;
         int firstMesh = 0;
         int meshCount = 0;
     };
@@ -782,23 +764,53 @@ private:
         QVector3D scale;
         QVector3D baseColor;
         QVector3D emissiveColor;
+        float metalness = 0.0f;
+        float roughness = 0.5f;
         bool selected = false;
+        bool selectable = true;
+        bool visible = true;
         int firstMesh = 0;
         int meshCount = 0;
     };
     QVector<CubeRecord> m_qmlCubes;
+    struct SphereRecord
+    {
+        const SphereItem *item = nullptr;
+        QVector3D position;
+        QVector3D rotationDegrees;
+        QVector3D scale;
+        QVector3D baseColor;
+        QVector3D emissiveColor;
+        float metalness = 0.0f;
+        float roughness = 0.5f;
+        bool selected = false;
+        bool selectable = true;
+        bool visible = true;
+        int firstMesh = 0;
+        int meshCount = 0;
+    };
+    QVector<SphereRecord> m_qmlSpheres;
     struct GizmoPart
     {
         int meshIndex = -1;
         int axis = -1;
+        int type = 0;
+    };
+    struct SelectedTransform
+    {
+        QObject *item = nullptr;
+        QVector3D startPos;
+        QVector3D startRot;
     };
     QVector<GizmoPart> m_gizmoParts;
+    QVector<SelectedTransform> m_dragSelection;
     bool m_axisDragActive = false;
     int m_axisDrag = -1;
+    bool m_rotateDragActive = false;
+    int m_rotateAxis = -1;
     QVector3D m_dragOrigin;
-    QVector3D m_dragStartPos;
     float m_dragStartT = 0.0f;
-    QObject *m_dragItem = nullptr;
+    QVector3D m_rotateStartVec;
 
     QVector3D axisVector(int axis) const
     {
@@ -811,6 +823,169 @@ private:
         }
     }
 
+    bool accumulateMeshBounds(const Mesh &mesh, QVector3D &minV, QVector3D &maxV, bool &hasBounds) const
+    {
+        QVector3D localMin = mesh.boundsMin;
+        QVector3D localMax = mesh.boundsMax;
+        if (!mesh.boundsValid)
+        {
+            if (mesh.vertices.isEmpty())
+                return false;
+            localMin = QVector3D(mesh.vertices[0].px, mesh.vertices[0].py, mesh.vertices[0].pz);
+            localMax = localMin;
+            for (const Vertex &v : mesh.vertices)
+            {
+                localMin.setX(qMin(localMin.x(), v.px));
+                localMin.setY(qMin(localMin.y(), v.py));
+                localMin.setZ(qMin(localMin.z(), v.pz));
+                localMax.setX(qMax(localMax.x(), v.px));
+                localMax.setY(qMax(localMax.y(), v.py));
+                localMax.setZ(qMax(localMax.z(), v.pz));
+            }
+        }
+
+        const QVector3D corners[8] = {
+            QVector3D(localMin.x(), localMin.y(), localMin.z()),
+            QVector3D(localMax.x(), localMin.y(), localMin.z()),
+            QVector3D(localMin.x(), localMax.y(), localMin.z()),
+            QVector3D(localMax.x(), localMax.y(), localMin.z()),
+            QVector3D(localMin.x(), localMin.y(), localMax.z()),
+            QVector3D(localMax.x(), localMin.y(), localMax.z()),
+            QVector3D(localMin.x(), localMax.y(), localMax.z()),
+            QVector3D(localMax.x(), localMax.y(), localMax.z())
+        };
+
+        for (const QVector3D &corner : corners)
+        {
+            const QVector3D world = mesh.modelMatrix.map(corner);
+            if (!hasBounds)
+            {
+                minV = world;
+                maxV = world;
+                hasBounds = true;
+            }
+            else
+            {
+                minV.setX(qMin(minV.x(), world.x()));
+                minV.setY(qMin(minV.y(), world.y()));
+                minV.setZ(qMin(minV.z(), world.z()));
+                maxV.setX(qMax(maxV.x(), world.x()));
+                maxV.setY(qMax(maxV.y(), world.y()));
+                maxV.setZ(qMax(maxV.z(), world.z()));
+            }
+        }
+        return true;
+    }
+
+    bool computeSelectionCenter(QVector3D &center)
+    {
+        QVector3D sum;
+        int count = 0;
+
+        for (const ModelRecord &record : m_qmlModels)
+        {
+            if (!record.selected)
+                continue;
+            QVector3D minV;
+            QVector3D maxV;
+            bool hasBounds = false;
+            for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+            {
+                const Mesh &mesh = m_scene.meshes()[i];
+                if (!mesh.visible)
+                    continue;
+                if (!mesh.selectable)
+                    continue;
+                accumulateMeshBounds(mesh, minV, maxV, hasBounds);
+            }
+            if (hasBounds)
+            {
+                sum += (minV + maxV) * 0.5f;
+                ++count;
+            }
+        }
+
+        for (const CubeRecord &record : m_qmlCubes)
+        {
+            if (!record.selected)
+                continue;
+            QVector3D minV;
+            QVector3D maxV;
+            bool hasBounds = false;
+            for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+            {
+                const Mesh &mesh = m_scene.meshes()[i];
+                if (!mesh.visible)
+                    continue;
+                if (!mesh.selectable)
+                    continue;
+                accumulateMeshBounds(mesh, minV, maxV, hasBounds);
+            }
+            if (hasBounds)
+            {
+                sum += (minV + maxV) * 0.5f;
+                ++count;
+            }
+        }
+
+        for (const SphereRecord &record : m_qmlSpheres)
+        {
+            if (!record.selected)
+                continue;
+            QVector3D minV;
+            QVector3D maxV;
+            bool hasBounds = false;
+            for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+            {
+                const Mesh &mesh = m_scene.meshes()[i];
+                if (!mesh.visible)
+                    continue;
+                if (!mesh.selectable)
+                    continue;
+                accumulateMeshBounds(mesh, minV, maxV, hasBounds);
+            }
+            if (hasBounds)
+            {
+                sum += (minV + maxV) * 0.5f;
+                ++count;
+            }
+        }
+
+        if (count == 0)
+            return false;
+        center = sum / float(count);
+        return true;
+    }
+
+    void buildDragSelection()
+    {
+        m_dragSelection.clear();
+        for (const ModelRecord &record : m_qmlModels)
+        {
+            if (!record.selected)
+                continue;
+            m_dragSelection.push_back({ const_cast<ModelItem *>(record.item),
+                                        record.position,
+                                        record.rotationDegrees });
+        }
+        for (const CubeRecord &record : m_qmlCubes)
+        {
+            if (!record.selected)
+                continue;
+            m_dragSelection.push_back({ const_cast<CubeItem *>(record.item),
+                                        record.position,
+                                        record.rotationDegrees });
+        }
+        for (const SphereRecord &record : m_qmlSpheres)
+        {
+            if (!record.selected)
+                continue;
+            m_dragSelection.push_back({ const_cast<SphereItem *>(record.item),
+                                        record.position,
+                                        record.rotationDegrees });
+        }
+    }
+
     void ensureGizmoMeshes()
     {
         if (!m_gizmoParts.isEmpty())
@@ -820,6 +995,11 @@ private:
             QVector3D(0.1f, 1.0f, 0.1f),
             QVector3D(0.1f, 0.3f, 1.0f)
         };
+        const float arcRadius = 1.0f;
+        const float arcThickness = 0.03f;
+        const float arcSpan = float(M_PI) * 0.5f;
+        const int arcSegments = 24;
+        const int arcSides = 10;
         for (int axis = 0; axis < 3; ++axis)
         {
             for (int part = 0; part < 2; ++part)
@@ -827,12 +1007,23 @@ private:
                 Mesh mesh = createUnitCubeMesh();
                 mesh.selectable = false;
                 mesh.gizmoAxis = axis;
+                mesh.gizmoType = part;
                 mesh.material.baseColor = colors[axis];
                 mesh.material.emissive = colors[axis] * 2.0f;
                 const int meshIndex = m_scene.meshes().size();
                 m_scene.meshes().push_back(mesh);
-                m_gizmoParts.push_back({ meshIndex, axis });
+                m_gizmoParts.push_back({ meshIndex, axis, part });
             }
+            Mesh arc = createArcMesh(arcRadius, arcThickness, 0.0f, arcSpan,
+                                     arcSegments, arcSides);
+            arc.selectable = false;
+            arc.gizmoAxis = axis;
+            arc.gizmoType = 2;
+            arc.material.baseColor = colors[axis];
+            arc.material.emissive = colors[axis] * 2.0f;
+            const int arcIndex = m_scene.meshes().size();
+            m_scene.meshes().push_back(arc);
+            m_gizmoParts.push_back({ arcIndex, axis, 2 });
         }
     }
 
@@ -840,47 +1031,77 @@ private:
     {
         const float distance = (cameraPos - pos).length();
         const float axisLength = qMax(0.2f, distance * 0.2f);
-        const float shaftRadius = axisLength * 0.05f;
-        const float headLength = axisLength * 0.25f;
-        const float headRadius = axisLength * 0.1f;
+        const float shaftRadius = axisLength * 0.025f;
+        const float headLength = axisLength * 0.2f;
+        const float headRadius = axisLength * 0.06f;
+        const float arcRadius = axisLength * 0.5f;
+        const float arcScale = arcRadius;
 
-        int partIndex = 0;
-        for (int axis = 0; axis < 3; ++axis)
+        for (const GizmoPart &part : m_gizmoParts)
         {
-            const QVector3D dir = axisVector(axis);
-
-            Mesh &shaft = m_scene.meshes()[m_gizmoParts[partIndex++].meshIndex];
-            Mesh &head = m_scene.meshes()[m_gizmoParts[partIndex++].meshIndex];
-
+            Mesh &mesh = m_scene.meshes()[part.meshIndex];
             if (!visible)
             {
                 QMatrix4x4 hidden;
                 hidden.setToIdentity();
                 hidden.scale(0.0f);
-                shaft.modelMatrix = hidden;
-                head.modelMatrix = hidden;
+                mesh.modelMatrix = hidden;
                 continue;
             }
 
-            QMatrix4x4 shaftM;
-            shaftM.translate(pos + dir * (axisLength * 0.5f));
-            if (axis == 0)
-                shaftM.scale(axisLength, shaftRadius, shaftRadius);
-            else if (axis == 1)
-                shaftM.scale(shaftRadius, axisLength, shaftRadius);
+            const int axis = part.axis;
+            const QVector3D dir = axisVector(axis);
+            if (part.type == 0)
+            {
+                QMatrix4x4 shaftM;
+                shaftM.translate(pos + dir * (axisLength * 0.5f));
+                if (axis == 0)
+                    shaftM.scale(axisLength, shaftRadius, shaftRadius);
+                else if (axis == 1)
+                    shaftM.scale(shaftRadius, axisLength, shaftRadius);
+                else
+                    shaftM.scale(shaftRadius, shaftRadius, axisLength);
+                mesh.modelMatrix = shaftM;
+            }
+            else if (part.type == 1)
+            {
+                QMatrix4x4 headM;
+                headM.translate(pos + dir * (axisLength + headLength * 0.5f));
+                if (axis == 0)
+                    headM.scale(headLength, headRadius, headRadius);
+                else if (axis == 1)
+                    headM.scale(headRadius, headLength, headRadius);
+                else
+                    headM.scale(headRadius, headRadius, headLength);
+                mesh.modelMatrix = headM;
+            }
             else
-                shaftM.scale(shaftRadius, shaftRadius, axisLength);
-            shaft.modelMatrix = shaftM;
+            {
+                QVector3D u(1.0f, 0.0f, 0.0f);
+                QVector3D v(0.0f, 1.0f, 0.0f);
+                QVector3D axisDir = dir;
+                if (axis == 0) {
+                    axisDir = QVector3D(1.0f, 0.0f, 0.0f);
+                    u = QVector3D(0.0f, 1.0f, 0.0f);
+                    v = QVector3D(0.0f, 0.0f, 1.0f);
+                } else if (axis == 1) {
+                    axisDir = QVector3D(0.0f, 1.0f, 0.0f);
+                    u = QVector3D(1.0f, 0.0f, 0.0f);
+                    v = QVector3D(0.0f, 0.0f, 1.0f);
+                } else {
+                    axisDir = QVector3D(0.0f, 0.0f, 1.0f);
+                    u = QVector3D(1.0f, 0.0f, 0.0f);
+                    v = QVector3D(0.0f, 1.0f, 0.0f);
+                }
 
-            QMatrix4x4 headM;
-            headM.translate(pos + dir * (axisLength + headLength * 0.5f));
-            if (axis == 0)
-                headM.scale(headLength, headRadius, headRadius);
-            else if (axis == 1)
-                headM.scale(headRadius, headLength, headRadius);
-            else
-                headM.scale(headRadius, headRadius, headLength);
-            head.modelMatrix = headM;
+                QMatrix4x4 arcM;
+                arcM.setToIdentity();
+                arcM.setColumn(0, QVector4D(u * arcScale, 0.0f));
+                arcM.setColumn(1, QVector4D(v * arcScale, 0.0f));
+                arcM.setColumn(2, QVector4D(axisDir * arcScale, 0.0f));
+                arcM.setColumn(3, QVector4D(pos, 1.0f));
+                mesh.modelMatrix = arcM;
+            }
         }
     }
 };
@@ -904,6 +1125,16 @@ RhiQmlItem::RhiQmlItem(QQuickItem *parent)
         const float dt = ms > 0 ? float(ms) / 1000.0f : 0.0f;
         if (dt > 0.0f)
             updateFreeCamera(dt);
+    });
+    m_smokeTick = new QTimer(this);
+    m_smokeTick->setInterval(16);
+    connect(m_smokeTick, &QTimer::timeout, this, [this]()
+    {
+        if (m_smokeAmount <= 0.0f || !m_smokeNoiseEnabled)
+            return;
+        if (!m_smokeTimer.isValid())
+            m_smokeTimer.start();
+        update();
     });
 }
 
@@ -971,6 +1202,7 @@ void RhiQmlItem::setSmokeAmount(float amount)
         return;
     m_smokeAmount = amount;
     emit smokeAmountChanged();
+    updateSmokeTicker();
     update();
 }
 
@@ -998,6 +1230,34 @@ void RhiQmlItem::setBloomRadius(float radius)
         return;
     m_bloomRadius = radius;
     emit bloomRadiusChanged();
+    update();
+}
+
+void RhiQmlItem::setVolumetricEnabled(bool enabled)
+{
+    if (m_volumetricEnabled == enabled)
+        return;
+    m_volumetricEnabled = enabled;
+    emit volumetricEnabledChanged();
+    update();
+}
+
+void RhiQmlItem::setShadowsEnabled(bool enabled)
+{
+    if (m_shadowsEnabled == enabled)
+        return;
+    m_shadowsEnabled = enabled;
+    emit shadowsEnabledChanged();
+    update();
+}
+
+void RhiQmlItem::setSmokeNoiseEnabled(bool enabled)
+{
+    if (m_smokeNoiseEnabled == enabled)
+        return;
+    m_smokeNoiseEnabled = enabled;
+    emit smokeNoiseEnabledChanged();
+    updateSmokeTicker();
     update();
 }
 
@@ -1035,6 +1295,29 @@ void RhiQmlItem::setLookSensitivity(float sensitivity)
         return;
     m_lookSensitivity = sensitivity;
     emit lookSensitivityChanged();
+}
+
+float RhiQmlItem::smokeTimeSeconds() const
+{
+    if (!m_smokeTimer.isValid())
+        return 0.0f;
+    return float(m_smokeTimer.elapsed()) / 1000.0f;
+}
+
+void RhiQmlItem::updateSmokeTicker()
+{
+    if (m_smokeAmount > 0.0f && m_smokeNoiseEnabled)
+    {
+        if (!m_smokeTimer.isValid())
+            m_smokeTimer.start();
+        if (!m_smokeTick->isActive())
+            m_smokeTick->start();
+    }
+    else
+    {
+        if (m_smokeTick->isActive())
+            m_smokeTick->stop();
+    }
 }
 
 void RhiQmlItem::keyPressEvent(QKeyEvent *event)
@@ -1077,6 +1360,13 @@ void RhiQmlItem::keyReleaseEvent(QKeyEvent *event)
 
 void RhiQmlItem::mousePressEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::MiddleButton)
+    {
+        m_panning = true;
+        m_lastPanPos = event->position();
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::LeftButton)
     {
         const float w = width();
@@ -1085,7 +1375,7 @@ void RhiQmlItem::mousePressEvent(QMouseEvent *event)
         {
             const QPointF pos = event->position();
             const QPointF normPos(pos.x() / w, pos.y() / h);
-            m_pendingPickRequests.push_back({ normPos, event->modifiers() });
+            m_pendingPickRequests.push_back({ normPos, QGuiApplication::keyboardModifiers() });
             m_pendingDragRequests.push_back({ normPos, 0 });
             update();
         }
@@ -1106,6 +1396,12 @@ void RhiQmlItem::mousePressEvent(QMouseEvent *event)
 
 void RhiQmlItem::mouseReleaseEvent(QMouseEvent *event)
 {
+    if (event->button() == Qt::MiddleButton)
+    {
+        m_panning = false;
+        event->accept();
+        return;
+    }
     if (event->button() == Qt::LeftButton)
     {
         const float w = width();
@@ -1132,6 +1428,30 @@ void RhiQmlItem::mouseReleaseEvent(QMouseEvent *event)
 
 void RhiQmlItem::mouseMoveEvent(QMouseEvent *event)
 {
+    if (m_panning)
+    {
+        const QPointF pos = event->position();
+        const QPointF delta = pos - m_lastPanPos;
+        m_lastPanPos = pos;
+
+        QVector3D forward = m_freeCameraEnabled
+                ? forwardVector()
+                : (m_cameraTarget - m_cameraPosition).normalized();
+        if (forward.isNull())
+            forward = QVector3D(0.0f, 0.0f, -1.0f);
+        const QVector3D right = QVector3D::crossProduct(forward, QVector3D(0.0f, 1.0f, 0.0f)).normalized();
+        const QVector3D up = QVector3D::crossProduct(right, forward).normalized();
+        const float dist = (m_cameraTarget - m_cameraPosition).length();
+        const float scale = qMax(0.001f, dist) * 0.006f;
+        const QVector3D pan = (-right * float(delta.x()) + up * float(delta.y())) * scale;
+        m_cameraPosition += pan;
+        m_cameraTarget += pan;
+        emit cameraPositionChanged();
+        emit cameraTargetChanged();
+        update();
+        event->accept();
+        return;
+    }
     if (m_leftDown)
     {
         const float w = width();
@@ -1336,9 +1656,9 @@ void RhiQmlItem::takePendingDragRequests(QVector<DragRequest> &out)
     m_pendingDragRequests.clear();
 }
 
-void RhiQmlItem::dispatchPickResult(QObject *item, const QVector3D &worldPos, bool hit)
+void RhiQmlItem::dispatchPickResult(QObject *item, const QVector3D &worldPos, bool hit, int modifiers)
 {
-    emit meshPicked(item, worldPos, hit);
+    emit meshPicked(item, worldPos, hit, modifiers);
 }
 
 void RhiQmlItem::setCameraDirection(const QVector3D &dir)
@@ -1377,6 +1697,13 @@ void RhiQmlItem::setObjectPosition(QObject *item, const QVector3D &pos)
     if (!item)
         return;
     item->setProperty("position", QVariant::fromValue(pos));
+}
+
+void RhiQmlItem::setObjectRotation(QObject *item, const QVector3D &rotation)
+{
+    if (!item)
+        return;
+    item->setProperty("rotationDegrees", QVariant::fromValue(rotation));
 }
 
 QQuickRhiItemRenderer *RhiQmlItem::createRenderer()

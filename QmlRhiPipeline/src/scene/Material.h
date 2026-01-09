@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QtCore/QString>
+#include <QtGui/QImage>
 #include <QtGui/QVector3D>
 
 struct Material
@@ -9,4 +11,10 @@ struct Material
     float roughness = 0.5f;
     float occlusion = 1.0f;
     QVector3D emissive = QVector3D(0.0f, 0.0f, 0.0f);
+    QString baseColorMapPath;
+    QImage baseColorMap;
+    QString normalMapPath;
+    QImage normalMap;
+    QString metallicRoughnessMapPath;
+    QImage metallicRoughnessMap;
 };

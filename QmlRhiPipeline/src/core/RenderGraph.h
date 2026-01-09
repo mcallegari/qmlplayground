@@ -10,18 +10,10 @@ class RenderTargetCache;
 class ShaderManager;
 class Scene;
 class QRhiTexture;
+class QRhiBuffer;
 
 inline constexpr int kMaxLights = 32;
 inline constexpr int kMaxSpotShadows = 8;
-
-struct FrameContext
-{
-    RhiContext *rhi = nullptr;
-    RenderTargetCache *targets = nullptr;
-    ShaderManager *shaders = nullptr;
-    Scene *scene = nullptr;
-    struct ShadowData *shadows = nullptr;
-};
 
 struct ShadowData
 {
@@ -36,6 +28,25 @@ struct ShadowData
     int spotShadowCount = 0;
     QRhiTexture *spotShadowMaps[kMaxSpotShadows] = { nullptr };
     QVector4D shadowDepthParams;
+};
+
+struct LightCullingData
+{
+    QRhiBuffer *tileLightIndexBuffer = nullptr;
+    int tileCountX = 0;
+    int tileCountY = 0;
+    int tileSize = 16;
+    bool enabled = false;
+};
+
+struct FrameContext
+{
+    RhiContext *rhi = nullptr;
+    RenderTargetCache *targets = nullptr;
+    ShaderManager *shaders = nullptr;
+    Scene *scene = nullptr;
+    ShadowData *shadows = nullptr;
+    LightCullingData *lightCulling = nullptr;
 };
 
 class RenderPass
