@@ -14,6 +14,8 @@ void main()
     float radiusScale = clamp(uParams.intensity.y / 10.0, 0.0, 1.0);
     vec2 halfPixel = uParams.pixelSize.xy * mix(1.0, 2.5, radiusScale);
     vec2 uv = vUv;
+    if (uParams.intensity.z > 0.5)
+        uv.y = 1.0 - uv.y;
 
     vec4 sum = vec4(0.0);
     sum += (2.0 / 16.0) * texture(bloomTex, uv + vec2(-halfPixel.x,  0.0));

@@ -61,6 +61,7 @@ qt_add_shaders(qmlrhipipeline qmlrhipipeline_shaders
         shaders/gizmo.frag
         shaders/lighting.vert
         shaders/lighting.frag
+        shaders/lighting_d3d.frag
         shaders/lighting_cull.frag
         shaders/post_bloom_downsample.frag
         shaders/post_bloom_upsample.frag

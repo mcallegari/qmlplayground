@@ -55,6 +55,7 @@ private:
     QRhiShaderResourceBindings *m_selectionSrb = nullptr;
     QRhiBuffer *m_selectionUbo = nullptr;
     QRhiBuffer *m_selectionDepthUbo = nullptr;
+    QRhiBuffer *m_selectionScreenUbo = nullptr;
     QRhiBuffer *m_selectionVbuf = nullptr;
     QRhiRenderPassDescriptor *m_selectionRpDesc = nullptr;
     int m_selectionMaxVertices = 0;

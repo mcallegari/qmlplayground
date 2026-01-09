@@ -13,7 +13,7 @@ class QRhiTexture;
 class QRhiBuffer;
 
 inline constexpr int kMaxLights = 32;
-inline constexpr int kMaxSpotShadows = 8;
+inline constexpr int kMaxSpotShadows = 7;
 
 struct ShadowData
 {

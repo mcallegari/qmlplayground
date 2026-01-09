@@ -360,7 +360,8 @@ void PassPost::execute(FrameContext &ctx)
     const QSize half = QSize(qMax(1, size.width() / 2), qMax(1, size.height() / 2));
     QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
     params.pixelSize = QVector4D(1.0f / float(size.width()), 1.0f / float(size.height()), 0.0f, 0.0f);
-    params.intensity = QVector4D(bloomIntensity, bloomRadius, 0.0f, 0.0f);
+    const bool flipSampleY = !ctx.rhi->rhi()->isYUpInFramebuffer();
+    params.intensity = QVector4D(bloomIntensity, bloomRadius, flipSampleY ? 1.0f : 0.0f, 0.0f);
     u->updateDynamicBuffer(m_postUbo, 0, sizeof(PostParams), &params);
     cb->resourceUpdate(u);
     cb->beginPass(m_bloomRt, clear, {});
@@ -372,7 +373,7 @@ void PassPost::execute(FrameContext &ctx)
 
     u = ctx.rhi->rhi()->nextResourceUpdateBatch();
     params.pixelSize = QVector4D(1.0f / float(half.width()), 1.0f / float(half.height()), 0.0f, 0.0f);
-    params.intensity = QVector4D(bloomIntensity, bloomRadius, 0.0f, 0.0f);
+    params.intensity = QVector4D(bloomIntensity, bloomRadius, flipSampleY ? 1.0f : 0.0f, 0.0f);
     u->updateDynamicBuffer(m_postUbo, 0, sizeof(PostParams), &params);
     cb->resourceUpdate(u);
     cb->beginPass(m_bloomBlurRt, clear, {});

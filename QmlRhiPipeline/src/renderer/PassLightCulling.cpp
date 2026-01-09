@@ -228,7 +228,7 @@ void PassLightCulling::ensureBuffers(FrameContext &ctx, const QSize &size)
     m_lastTileCountY = tileCountY;
 
     delete m_lightIndexBuffer;
-    m_lightIndexBuffer = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::StorageBuffer,
+    m_lightIndexBuffer = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Static, QRhiBuffer::StorageBuffer,
                                                    quint32(tileCountX * tileCountY * (kMaxLights + 1) * sizeof(quint32)));
     if (!m_lightIndexBuffer->create())
     {

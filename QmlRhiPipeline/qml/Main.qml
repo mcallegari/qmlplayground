@@ -275,7 +275,7 @@ Window {
             castShadows: true
             beamShape: Light.ConeShape
             beamRadius: 0.2
-            goboPath: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00024.svg"
+            goboPath: "C:/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00024.svg"
         }
 
         Light {
@@ -347,8 +347,8 @@ Window {
 
         Model {
             id: suzanne
-            path: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
-            //path: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/models/Duck.gltf"
+            path: "C:/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
+            //path: "/c/projects/qmlplayground/QmlRhiPipeline/models/Duck.gltf"
             position: Qt.vector3d(1.5, -1.2, 0)
             rotationDegrees: Qt.vector3d(0, -30, 0)
             scale: Qt.vector3d(1, 1, 1)

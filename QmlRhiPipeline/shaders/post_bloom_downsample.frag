@@ -14,6 +14,8 @@ void main()
     vec2 halfPixel = 0.5 * uParams.pixelSize.xy;
     vec2 onePixel = 1.0 * uParams.pixelSize.xy;
     vec2 uv = vUv;
+    if (uParams.intensity.z > 0.5)
+        uv.y = 1.0 - uv.y;
 
     vec4 sum = vec4(0.0);
     sum += (4.0 / 32.0) * texture(emissiveTex, uv);

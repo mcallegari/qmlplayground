@@ -10,9 +10,8 @@ layout(location = 0) out vec4 outColor;
 layout(binding = 0) uniform sampler2D gbuf0;
 layout(binding = 1) uniform sampler2D gbuf1;
 layout(binding = 2) uniform sampler2D gbuf2;
-layout(binding = 20) uniform sampler2D gbufEmissive;
 
-layout(std140, binding = 3) uniform LightsUbo {
+layout(std140, binding = 20) uniform LightsUbo {
     vec4 lightCount;
     vec4 lightParams;
     vec4 lightFlags;
@@ -23,13 +22,13 @@ layout(std140, binding = 3) uniform LightsUbo {
     vec4 lightOther[MAX_LIGHTS];
 } uLights;
 
-layout(std140, binding = 4) uniform CameraUbo {
+layout(std140, binding = 21) uniform CameraUbo {
     mat4 view;
     mat4 invViewProj;
     vec4 cameraPos;
 } uCamera;
 
-layout(std140, binding = 5) uniform ShadowUbo {
+layout(std140, binding = 22) uniform ShadowUbo {
     mat4 lightViewProj[3];
     vec4 splits;
     vec4 dirLightDir;
@@ -39,19 +38,19 @@ layout(std140, binding = 5) uniform ShadowUbo {
     vec4 shadowDepthParams;
 } uShadow;
 
-layout(binding = 6) uniform sampler2D shadowMap0;
-layout(binding = 7) uniform sampler2D shadowMap1;
-layout(binding = 8) uniform sampler2D shadowMap2;
-layout(binding = 9) uniform sampler2D spotShadowMap0;
-layout(binding = 10) uniform sampler2D spotShadowMap1;
-layout(binding = 11) uniform sampler2D spotShadowMap2;
-layout(binding = 12) uniform sampler2D spotShadowMap3;
-layout(binding = 13) uniform sampler2D spotShadowMap4;
-layout(binding = 14) uniform sampler2D spotShadowMap5;
-layout(binding = 15) uniform sampler2D spotShadowMap6;
-layout(binding = 17) uniform sampler2D gbufDepth;
-layout(binding = 18) uniform sampler2DArray spotGoboMap;
-layout(std140, binding = 19) uniform FlipUbo {
+layout(binding = 3) uniform sampler2D shadowMap0;
+layout(binding = 4) uniform sampler2D shadowMap1;
+layout(binding = 5) uniform sampler2D shadowMap2;
+layout(binding = 6) uniform sampler2D spotShadowMap0;
+layout(binding = 7) uniform sampler2D spotShadowMap1;
+layout(binding = 8) uniform sampler2D spotShadowMap2;
+layout(binding = 9) uniform sampler2D spotShadowMap3;
+layout(binding = 10) uniform sampler2D spotShadowMap4;
+layout(binding = 11) uniform sampler2D spotShadowMap5;
+layout(binding = 12) uniform sampler2D spotShadowMap6;
+layout(binding = 13) uniform sampler2D gbufDepth;
+layout(binding = 14) uniform sampler2DArray spotGoboMap;
+layout(std140, binding = 23) uniform FlipUbo {
     vec4 flip;
 } uFlip;
 
@@ -119,40 +118,44 @@ vec2 shadowUv(vec2 uv)
 
 float sampleSpotShadowDepth(vec2 uv, int slot)
 {
-    if (slot == 0)
-        return texture(spotShadowMap0, uv).r;
-    if (slot == 1)
-        return texture(spotShadowMap1, uv).r;
-    if (slot == 2)
-        return texture(spotShadowMap2, uv).r;
-    if (slot == 3)
-        return texture(spotShadowMap3, uv).r;
-    if (slot == 4)
-        return texture(spotShadowMap4, uv).r;
-    if (slot == 5)
-        return texture(spotShadowMap5, uv).r;
-    if (slot == 6)
-        return texture(spotShadowMap6, uv).r;
-    return 0.0;
+    float depth = 0.0;
+    int clamped = clamp(slot, 0, MAX_SPOT_SHADOWS - 1);
+    if (clamped == 0)
+        depth = texture(spotShadowMap0, uv).r;
+    else if (clamped == 1)
+        depth = texture(spotShadowMap1, uv).r;
+    else if (clamped == 2)
+        depth = texture(spotShadowMap2, uv).r;
+    else if (clamped == 3)
+        depth = texture(spotShadowMap3, uv).r;
+    else if (clamped == 4)
+        depth = texture(spotShadowMap4, uv).r;
+    else if (clamped == 5)
+        depth = texture(spotShadowMap5, uv).r;
+    else
+        depth = texture(spotShadowMap6, uv).r;
+    return depth;
 }
 
 float sampleSpotShadowDepthLod(vec2 uv, int slot, float lod)
 {
-    if (slot == 0)
-        return textureLod(spotShadowMap0, uv, lod).r;
-    if (slot == 1)
-        return textureLod(spotShadowMap1, uv, lod).r;
-    if (slot == 2)
-        return textureLod(spotShadowMap2, uv, lod).r;
-    if (slot == 3)
-        return textureLod(spotShadowMap3, uv, lod).r;
-    if (slot == 4)
-        return textureLod(spotShadowMap4, uv, lod).r;
-    if (slot == 5)
-        return textureLod(spotShadowMap5, uv, lod).r;
-    if (slot == 6)
-        return textureLod(spotShadowMap6, uv, lod).r;
-    return 0.0;
+    float depth = 0.0;
+    int clamped = clamp(slot, 0, MAX_SPOT_SHADOWS - 1);
+    if (clamped == 0)
+        depth = textureLod(spotShadowMap0, uv, lod).r;
+    else if (clamped == 1)
+        depth = textureLod(spotShadowMap1, uv, lod).r;
+    else if (clamped == 2)
+        depth = textureLod(spotShadowMap2, uv, lod).r;
+    else if (clamped == 3)
+        depth = textureLod(spotShadowMap3, uv, lod).r;
+    else if (clamped == 4)
+        depth = textureLod(spotShadowMap4, uv, lod).r;
+    else if (clamped == 5)
+        depth = textureLod(spotShadowMap5, uv, lod).r;
+    else
+        depth = textureLod(spotShadowMap6, uv, lod).r;
+    return depth;
 }
 
 bool spotProject(mat4 viewProj, vec3 worldPos, out vec2 uv)
@@ -268,10 +271,11 @@ void main()
     vec2 uvNdc = vUv;
     if (uFlip.flip.y > 0.5)
         uvNdc.y = 1.0 - uvNdc.y;
+    vec2 uvNdcVol = vec2(uvNdc.x, 1.0 - uvNdc.y);
 
     vec3 baseColor = texture(gbuf0, uvSample).rgb;
     float metalness = texture(gbuf0, uvSample).a;
-    vec3 emissive = texture(gbufEmissive, uvSample).rgb;
+    vec3 emissive = vec3(0.0);
 
     vec3 N = decodeNormal(texture(gbuf1, uvSample).rgb);
     float roughness = texture(gbuf1, uvSample).a;
@@ -422,12 +426,12 @@ void main()
             if (uShadow.shadowDepthParams.w > 0.5)
                 hitPos = texture(gbuf2, uvSample).rgb;
             else
-                hitPos = reconstructWorldPosWithDepth(uvNdc, depthSample);
+                hitPos = reconstructWorldPosWithDepth(uvNdcVol, depthSample);
             vec3 toHit = hitPos - uCamera.cameraPos.xyz;
             rayLen = length(toHit);
             rayDir = rayLen > 0.0 ? toHit / rayLen : vec3(0.0, 0.0, -1.0);
         } else {
-            vec4 clip = vec4(uvNdc * 2.0 - 1.0, 1.0, 1.0);
+            vec4 clip = vec4(uvNdcVol * 2.0 - 1.0, 1.0, 1.0);
             vec4 worldFar = uCamera.invViewProj * clip;
             worldFar.xyz /= max(worldFar.w, 0.0001);
             rayDir = normalize(worldFar.xyz - uCamera.cameraPos.xyz);
