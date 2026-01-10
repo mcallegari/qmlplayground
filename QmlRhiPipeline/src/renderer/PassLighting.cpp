@@ -455,14 +455,11 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     bool spotChanged = false;
     if (ctx.shadows)
     {
-        for (int i = 0; i < kMaxSpotShadows; ++i)
-        {
-            if (m_spotShadowMaps[i] != ctx.shadows->spotShadowMaps[i])
-            {
-                spotChanged = true;
-                break;
-            }
-        }
+        spotChanged = m_spotShadowMapArray != ctx.shadows->spotShadowMapArray;
+    }
+    else
+    {
+        spotChanged = m_spotShadowMapArray != nullptr;
     }
 
     bool shadowsChanged = false;
@@ -509,6 +506,7 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     m_lightIndexBuffer = nullptr;
     delete m_spotGoboMap;
     m_spotGoboMap = nullptr;
+    m_spotShadowMapArray = nullptr;
     for (QString &path : m_spotGoboPaths)
         path = QString();
 
@@ -651,16 +649,7 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     m_gbufDepth = gbuf.depth;
     m_gbufWorldPosFloat = (gbuf.colorFormat == QRhiTexture::RGBA16F
                            || gbuf.colorFormat == QRhiTexture::RGBA32F);
-    if (ctx.shadows)
-    {
-        for (int i = 0; i < kMaxSpotShadows; ++i)
-            m_spotShadowMaps[i] = ctx.shadows->spotShadowMaps[i];
-    }
-    else
-    {
-        for (int i = 0; i < kMaxSpotShadows; ++i)
-            m_spotShadowMaps[i] = nullptr;
-    }
+    m_spotShadowMapArray = ctx.shadows ? ctx.shadows->spotShadowMapArray : nullptr;
     if (!m_spotGoboMap)
     {
         m_spotGoboMap = ctx.rhi->rhi()->newTextureArray(QRhiTexture::RGBA8, kMaxLights, m_spotGoboSize);
@@ -683,14 +672,11 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
             QRhiShaderResourceBinding::uniformBuffer(7, QRhiShaderResourceBinding::FragmentStage, m_cameraUbo),
             QRhiShaderResourceBinding::uniformBuffer(8, QRhiShaderResourceBinding::FragmentStage, m_shadowUbo)
         };
-        for (int i = 0; i < kMaxSpotShadows; ++i)
-        {
-            QRhiTexture *spotTex = ctx.shadows ? ctx.shadows->spotShadowMaps[i] : nullptr;
-            if (!spotTex)
-                spotTex = gbuf.depth;
-            bindings.push_back(QRhiShaderResourceBinding::sampledTexture(8 + i, QRhiShaderResourceBinding::FragmentStage,
-                                                                         spotTex, m_spotShadowSampler));
-        }
+        QRhiTexture *spotTex = ctx.shadows ? ctx.shadows->spotShadowMapArray : nullptr;
+        if (!spotTex)
+            return;
+        bindings.push_back(QRhiShaderResourceBinding::sampledTexture(9, QRhiShaderResourceBinding::FragmentStage,
+                                                                     spotTex, m_spotShadowSampler));
         bindings.push_back(QRhiShaderResourceBinding::sampledTexture(16, QRhiShaderResourceBinding::FragmentStage,
                                                                      m_spotGoboMap, m_goboSampler));
     }
@@ -747,16 +733,12 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     }
     if (!metal)
     {
-        const int spotShadowBindings = d3d11 ? 7 : kMaxSpotShadows;
-        for (int i = 0; i < spotShadowBindings; ++i)
-        {
-            QRhiTexture *spotTex = ctx.shadows ? ctx.shadows->spotShadowMaps[i] : nullptr;
-            if (!spotTex)
-                spotTex = gbuf.depth;
-            const int base = d3d11 ? 6 : 9;
-            bindings.push_back(QRhiShaderResourceBinding::sampledTexture(base + i, QRhiShaderResourceBinding::FragmentStage,
-                                                                         spotTex, m_spotShadowSampler));
-        }
+        QRhiTexture *spotTex = ctx.shadows ? ctx.shadows->spotShadowMapArray : nullptr;
+        if (!spotTex)
+            return;
+        const int base = d3d11 ? 6 : 9;
+        bindings.push_back(QRhiShaderResourceBinding::sampledTexture(base, QRhiShaderResourceBinding::FragmentStage,
+                                                                     spotTex, m_spotShadowSampler));
         if (d3d11)
         {
             bindings.push_back(QRhiShaderResourceBinding::sampledTexture(13, QRhiShaderResourceBinding::FragmentStage,

@@ -44,7 +44,7 @@ private:
     QRhiTexture *m_gbufColor3 = nullptr;
     QRhiTexture *m_gbufDepth = nullptr;
     bool m_gbufWorldPosFloat = false;
-    QRhiTexture *m_spotShadowMaps[kMaxSpotShadows] = { nullptr };
+    QRhiTexture *m_spotShadowMapArray = nullptr;
     QRhiTexture *m_spotGoboMap = nullptr;
     QString m_spotGoboPaths[kMaxLights];
     QSize m_spotGoboSize = QSize(256, 256);

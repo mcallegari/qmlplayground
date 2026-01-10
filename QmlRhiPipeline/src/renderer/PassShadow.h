@@ -38,7 +38,7 @@ private:
     QRhiShaderResourceBindings *spotShadowSrbForMesh(FrameContext &ctx, Mesh &mesh, int slot);
 
     Cascade m_cascades[3];
-    QVector<QRhiTexture *> m_spotShadowMaps;
+    QRhiTexture *m_spotShadowMapArray = nullptr;
     QVector<QRhiRenderBuffer *> m_spotDepthStencils;
     QVector<QRhiTextureRenderTarget *> m_spotRts;
     QRhiRenderPassDescriptor *m_spotRpDesc = nullptr;

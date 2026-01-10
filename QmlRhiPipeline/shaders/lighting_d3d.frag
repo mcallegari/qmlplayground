@@ -2,7 +2,7 @@
 #extension GL_EXT_control_flow_attributes : enable
 
 #define MAX_LIGHTS 32
-#define MAX_SPOT_SHADOWS 7
+#define MAX_SPOT_SHADOWS 32
 #define MAX_BEAM_STEPS 16
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 outColor;
@@ -41,13 +41,7 @@ layout(std140, binding = 22) uniform ShadowUbo {
 layout(binding = 3) uniform sampler2D shadowMap0;
 layout(binding = 4) uniform sampler2D shadowMap1;
 layout(binding = 5) uniform sampler2D shadowMap2;
-layout(binding = 6) uniform sampler2D spotShadowMap0;
-layout(binding = 7) uniform sampler2D spotShadowMap1;
-layout(binding = 8) uniform sampler2D spotShadowMap2;
-layout(binding = 9) uniform sampler2D spotShadowMap3;
-layout(binding = 10) uniform sampler2D spotShadowMap4;
-layout(binding = 11) uniform sampler2D spotShadowMap5;
-layout(binding = 12) uniform sampler2D spotShadowMap6;
+layout(binding = 6) uniform sampler2DArray spotShadowMap;
 layout(binding = 13) uniform sampler2D gbufDepth;
 layout(binding = 14) uniform sampler2DArray spotGoboMap;
 layout(std140, binding = 23) uniform FlipUbo {
@@ -123,44 +117,14 @@ vec2 shadowUvSpot(vec2 uv)
 
 float sampleSpotShadowDepth(vec2 uv, int slot)
 {
-    float depth = 0.0;
     int clamped = clamp(slot, 0, MAX_SPOT_SHADOWS - 1);
-    if (clamped == 0)
-        depth = texture(spotShadowMap0, uv).r;
-    else if (clamped == 1)
-        depth = texture(spotShadowMap1, uv).r;
-    else if (clamped == 2)
-        depth = texture(spotShadowMap2, uv).r;
-    else if (clamped == 3)
-        depth = texture(spotShadowMap3, uv).r;
-    else if (clamped == 4)
-        depth = texture(spotShadowMap4, uv).r;
-    else if (clamped == 5)
-        depth = texture(spotShadowMap5, uv).r;
-    else
-        depth = texture(spotShadowMap6, uv).r;
-    return depth;
+    return texture(spotShadowMap, vec3(uv, float(clamped))).r;
 }
 
 float sampleSpotShadowDepthLod(vec2 uv, int slot, float lod)
 {
-    float depth = 0.0;
     int clamped = clamp(slot, 0, MAX_SPOT_SHADOWS - 1);
-    if (clamped == 0)
-        depth = textureLod(spotShadowMap0, uv, lod).r;
-    else if (clamped == 1)
-        depth = textureLod(spotShadowMap1, uv, lod).r;
-    else if (clamped == 2)
-        depth = textureLod(spotShadowMap2, uv, lod).r;
-    else if (clamped == 3)
-        depth = textureLod(spotShadowMap3, uv, lod).r;
-    else if (clamped == 4)
-        depth = textureLod(spotShadowMap4, uv, lod).r;
-    else if (clamped == 5)
-        depth = textureLod(spotShadowMap5, uv, lod).r;
-    else
-        depth = textureLod(spotShadowMap6, uv, lod).r;
-    return depth;
+    return textureLod(spotShadowMap, vec3(uv, float(clamped)), lod).r;
 }
 
 bool spotProject(mat4 viewProj, vec3 worldPos, out vec2 uv)

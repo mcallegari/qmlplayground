@@ -43,13 +43,7 @@ layout(std140, binding = 8) uniform ShadowUbo {
     vec4 shadowDepthParams;
 } uShadow;
 
-layout(binding = 9) uniform sampler2D spotShadowMap0;
-layout(binding = 10) uniform sampler2D spotShadowMap1;
-layout(binding = 11) uniform sampler2D spotShadowMap2;
-layout(binding = 12) uniform sampler2D spotShadowMap3;
-layout(binding = 13) uniform sampler2D spotShadowMap4;
-layout(binding = 14) uniform sampler2D spotShadowMap5;
-layout(binding = 15) uniform sampler2D spotShadowMap6;
+layout(binding = 9) uniform sampler2DArray spotShadowMap;
 layout(binding = 16) uniform sampler2DArray spotGoboMap;
 
 vec3 fresnelSchlick(float cosTheta, vec3 F0)
@@ -152,21 +146,7 @@ bool spotProject(mat4 viewProj, vec3 worldPos, out vec2 uv)
 
 float sampleSpotShadowDepthLod(vec2 uv, int slot, float lod)
 {
-    if (slot == 0)
-        return textureLod(spotShadowMap0, uv, lod).r;
-    if (slot == 1)
-        return textureLod(spotShadowMap1, uv, lod).r;
-    if (slot == 2)
-        return textureLod(spotShadowMap2, uv, lod).r;
-    if (slot == 3)
-        return textureLod(spotShadowMap3, uv, lod).r;
-    if (slot == 4)
-        return textureLod(spotShadowMap4, uv, lod).r;
-    if (slot == 5)
-        return textureLod(spotShadowMap5, uv, lod).r;
-    if (slot == 6)
-        return textureLod(spotShadowMap6, uv, lod).r;
-    return 0.0;
+    return textureLod(spotShadowMap, vec3(uv, float(slot)), lod).r;
 }
 
 float sampleSpotShadow(mat4 viewProj, vec3 worldPos, vec3 lightPos,

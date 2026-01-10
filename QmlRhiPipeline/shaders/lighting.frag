@@ -2,7 +2,7 @@
 #extension GL_EXT_control_flow_attributes : enable
 
 #define MAX_LIGHTS 32
-#define MAX_SPOT_SHADOWS 7
+#define MAX_SPOT_SHADOWS 32
 #define MAX_BEAM_STEPS 16
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 outColor;
@@ -42,13 +42,7 @@ layout(std140, binding = 5) uniform ShadowUbo {
 layout(binding = 6) uniform sampler2D shadowMap0;
 layout(binding = 7) uniform sampler2D shadowMap1;
 layout(binding = 8) uniform sampler2D shadowMap2;
-layout(binding = 9) uniform sampler2D spotShadowMap0;
-layout(binding = 10) uniform sampler2D spotShadowMap1;
-layout(binding = 11) uniform sampler2D spotShadowMap2;
-layout(binding = 12) uniform sampler2D spotShadowMap3;
-layout(binding = 13) uniform sampler2D spotShadowMap4;
-layout(binding = 14) uniform sampler2D spotShadowMap5;
-layout(binding = 15) uniform sampler2D spotShadowMap6;
+layout(binding = 9) uniform sampler2DArray spotShadowMap;
 layout(binding = 17) uniform sampler2D gbufDepth;
 layout(binding = 18) uniform sampler2DArray spotGoboMap;
 layout(std140, binding = 19) uniform FlipUbo {
@@ -119,40 +113,14 @@ vec2 shadowUv(vec2 uv)
 
 float sampleSpotShadowDepth(vec2 uv, int slot)
 {
-    if (slot == 0)
-        return texture(spotShadowMap0, uv).r;
-    if (slot == 1)
-        return texture(spotShadowMap1, uv).r;
-    if (slot == 2)
-        return texture(spotShadowMap2, uv).r;
-    if (slot == 3)
-        return texture(spotShadowMap3, uv).r;
-    if (slot == 4)
-        return texture(spotShadowMap4, uv).r;
-    if (slot == 5)
-        return texture(spotShadowMap5, uv).r;
-    if (slot == 6)
-        return texture(spotShadowMap6, uv).r;
-    return 0.0;
+    int clamped = clamp(slot, 0, MAX_SPOT_SHADOWS - 1);
+    return texture(spotShadowMap, vec3(uv, float(clamped))).r;
 }
 
 float sampleSpotShadowDepthLod(vec2 uv, int slot, float lod)
 {
-    if (slot == 0)
-        return textureLod(spotShadowMap0, uv, lod).r;
-    if (slot == 1)
-        return textureLod(spotShadowMap1, uv, lod).r;
-    if (slot == 2)
-        return textureLod(spotShadowMap2, uv, lod).r;
-    if (slot == 3)
-        return textureLod(spotShadowMap3, uv, lod).r;
-    if (slot == 4)
-        return textureLod(spotShadowMap4, uv, lod).r;
-    if (slot == 5)
-        return textureLod(spotShadowMap5, uv, lod).r;
-    if (slot == 6)
-        return textureLod(spotShadowMap6, uv, lod).r;
-    return 0.0;
+    int clamped = clamp(slot, 0, MAX_SPOT_SHADOWS - 1);
+    return textureLod(spotShadowMap, vec3(uv, float(clamped)), lod).r;
 }
 
 bool spotProject(mat4 viewProj, vec3 worldPos, out vec2 uv)

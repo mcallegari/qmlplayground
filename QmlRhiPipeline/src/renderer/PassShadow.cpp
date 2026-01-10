@@ -54,8 +54,7 @@ void PassShadow::prepare(FrameContext &ctx)
             ctx.shadows->spotShadowParams[i] = QVector4D(-1.0f, 0.0f, 0.0f, 0.0f);
         }
         ctx.shadows->spotShadowCount = 0;
-        for (int i = 0; i < kMaxSpotShadows; ++i)
-            ctx.shadows->spotShadowMaps[i] = i < m_spotShadowMaps.size() ? m_spotShadowMaps[i] : nullptr;
+        ctx.shadows->spotShadowMapArray = m_spotShadowMapArray;
         ctx.shadows->shadowDepthParams = QVector4D(depthScale, depthBias,
                                                    reverseZ ? 1.0f : 0.0f, 0.0f);
     }
@@ -149,39 +148,67 @@ void PassShadow::execute(FrameContext &ctx)
         ctx.shadows->spotLightViewProj[i] = lightViewProj;
     }
 
-    if (shadowsEnabled && !m_spotRts.isEmpty() && !m_spotShadowMaps.isEmpty())
+    if (shadowsEnabled && !m_spotRts.isEmpty() && m_spotShadowMapArray)
     {
-        const int maxSlots = qMin(int(m_spotRts.size()), int(m_spotShadowMaps.size()));
-        int rendered = 0;
+        const int maxSlots = qMin(int(m_spotRts.size()), m_spotShadowSlots);
+        struct SpotCandidate
+        {
+            int index = -1;
+            float score = 0.0f;
+            float nearPlane = 1.0f;
+            float farPlane = 1.0f;
+        };
+        QVector<SpotCandidate> candidates;
+        candidates.reserve(lights.size());
+        const QVector3D camPos = ctx.scene->camera().position();
         for (int i = 0; i < lights.size(); ++i)
         {
             const Light &light = lights[i];
             if (light.type != Light::Type::Spot || !light.castShadows || light.range <= 0.0f)
                 continue;
-            if (i >= maxSlots)
-                continue;
             const float nearPlane = 1.0f;
             const float farPlane = qMax(light.range, nearPlane + 0.1f);
-            const QMatrix4x4 lightViewProj = ctx.shadows->spotLightViewProj[i];
-            ctx.shadows->spotShadowParams[i] = QVector4D(float(i), 1.0f, nearPlane, farPlane);
-            renderSpot(ctx, m_spotRts[i], lightViewProj, light.position, nearPlane, farPlane, i);
-            ++rendered;
+            const float range = qMax(light.range, 0.01f);
+            const float dist = (camPos - light.position).length();
+            const float falloff = 1.0f / (1.0f + (dist * dist) / (range * range));
+            const float luminance = 0.2126f * light.color.x()
+                                    + 0.7152f * light.color.y()
+                                    + 0.0722f * light.color.z();
+            const float intensity = qMax(light.intensity, 0.0f);
+            const float score = intensity * luminance * falloff;
+            if (score <= 0.0f)
+                continue;
+            candidates.push_back({ i, score, nearPlane, farPlane });
         }
-        ctx.shadows->spotShadowCount = rendered;
+        std::stable_sort(candidates.begin(), candidates.end(),
+                         [](const SpotCandidate &a, const SpotCandidate &b) { return a.score > b.score; });
+        int slot = 0;
+        for (const SpotCandidate &candidate : candidates)
+        {
+            if (slot >= maxSlots)
+                break;
+            const int lightIndex = candidate.index;
+            const Light &light = lights[lightIndex];
+            const QMatrix4x4 lightViewProj = ctx.shadows->spotLightViewProj[lightIndex];
+            ctx.shadows->spotShadowParams[lightIndex] = QVector4D(float(slot), 1.0f, candidate.nearPlane, candidate.farPlane);
+            renderSpot(ctx, m_spotRts[slot], lightViewProj, light.position, candidate.nearPlane, candidate.farPlane, slot);
+            ++slot;
+        }
+        ctx.shadows->spotShadowCount = slot;
         // Debug/capture block removed.
     }
 }
 
 void PassShadow::ensureResources(FrameContext &ctx)
 {
-    constexpr int kSpotShaderVersion = 2;
+    constexpr int kSpotShaderVersion = 3;
     const QMatrix4x4 clipCorr = ctx.rhi->rhi()->clipSpaceCorrMatrix();
     bool reverseZ = clipCorr(2, 2) < 0.0f;
     if (ctx.rhi->rhi()->backend() == QRhi::D3D11 || ctx.rhi->rhi()->backend() == QRhi::Metal)
         reverseZ = false;
     const bool haveResources = m_pipeline && m_spotPipeline
                                && m_cascades[0].rt && m_cascades[0].color
-                               && !m_spotShadowMaps.isEmpty()
+                               && m_spotShadowMapArray
                                && !m_spotDepthStencils.isEmpty()
                                && !m_spotRts.isEmpty();
     if (haveResources && m_reverseZ == reverseZ && m_spotShaderVersion == kSpotShaderVersion)
@@ -190,7 +217,7 @@ void PassShadow::ensureResources(FrameContext &ctx)
     if (!ctx.rhi || !ctx.rhi->rhi())
         return;
 
-    if (m_pipeline || m_spotPipeline || m_cascades[0].rt || !m_spotShadowMaps.isEmpty() || !m_spotRts.isEmpty())
+    if (m_pipeline || m_spotPipeline || m_cascades[0].rt || m_spotShadowMapArray || !m_spotRts.isEmpty())
     {
         delete m_pipeline;
         m_pipeline = nullptr;
@@ -221,9 +248,8 @@ void PassShadow::ensureResources(FrameContext &ctx)
         for (QRhiTextureRenderTarget *rt : m_spotRts)
             delete rt;
         m_spotRts.clear();
-        for (QRhiTexture *tex : m_spotShadowMaps)
-            delete tex;
-        m_spotShadowMaps.clear();
+        delete m_spotShadowMapArray;
+        m_spotShadowMapArray = nullptr;
         for (QRhiRenderBuffer *buf : m_spotDepthStencils)
             delete buf;
         m_spotDepthStencils.clear();
@@ -269,19 +295,16 @@ void PassShadow::ensureResources(FrameContext &ctx)
             return;
     }
 
-    m_spotShadowMaps.reserve(m_spotShadowSlots);
-    for (int i = 0; i < m_spotShadowSlots; ++i)
+    m_spotShadowMapArray = ctx.rhi->rhi()->newTextureArray(spotColorFormat,
+                                                           m_spotShadowSlots,
+                                                           QSize(m_spotShadowSize, m_spotShadowSize),
+                                                           1,
+                                                           QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource);
+    if (!m_spotShadowMapArray->create())
     {
-        QRhiTexture *tex = ctx.rhi->rhi()->newTexture(spotColorFormat,
-                                                     QSize(m_spotShadowSize, m_spotShadowSize),
-                                                     1,
-                                                     QRhiTexture::RenderTarget | QRhiTexture::UsedAsTransferSource);
-        if (!tex->create())
-        {
-            delete tex;
-            return;
-        }
-        m_spotShadowMaps.push_back(tex);
+        delete m_spotShadowMapArray;
+        m_spotShadowMapArray = nullptr;
+        return;
     }
     m_spotRts.reserve(m_spotShadowSlots);
     m_spotDepthStencils.reserve(m_spotShadowSlots);
@@ -294,7 +317,8 @@ void PassShadow::ensureResources(FrameContext &ctx)
             delete depthStencil;
             return;
         }
-        QRhiColorAttachment colorAttachment(m_spotShadowMaps[i]);
+        QRhiColorAttachment colorAttachment(m_spotShadowMapArray);
+        colorAttachment.setLayer(i);
         QRhiTextureRenderTargetDescription spotDesc;
         spotDesc.setColorAttachments({ colorAttachment });
         spotDesc.setDepthStencilBuffer(depthStencil);

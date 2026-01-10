@@ -1,4 +1,5 @@
 #include "core/RhiContext.h"
+#include "core/RenderGraph.h"
 
 #include <QtCore/QDebug>
 #include <QtCore/QByteArray>
@@ -40,6 +41,13 @@ void logRhiInfo(const QRhi *rhi)
                          .arg(QLatin1String(deviceTypeLabel(info.deviceType)))
                          .arg(QString::number(info.vendorId, 16))
                          .arg(QString::number(info.deviceId, 16));
+    const int arraySizeMax = rhi->resourceLimit(QRhi::TextureArraySizeMax);
+    qInfo() << "RHI TextureArraySizeMax:" << arraySizeMax;
+    if (arraySizeMax > 0 && arraySizeMax < kMaxSpotShadows)
+    {
+        qWarning() << "RHI TextureArraySizeMax is below kMaxSpotShadows:"
+                   << arraySizeMax << "<" << kMaxSpotShadows;
+    }
 }
 
 } // namespace
@@ -283,5 +291,3 @@ void RhiContext::clearExternalFrame()
     m_externalCb = nullptr;
     m_externalRt = nullptr;
 }
-
-
