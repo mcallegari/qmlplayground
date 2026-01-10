@@ -366,32 +366,34 @@ void main()
         Lo += (diffuse + specular) * radiance * NdotL * shadow;
     }
 
-    // Directional light with CSM shadows
-    vec3 dirColor = uShadow.dirLightColorIntensity.xyz * uShadow.dirLightColorIntensity.w;
-    if (length(dirColor) > 0.0) {
-        vec3 Ld = normalize(-uShadow.dirLightDir.xyz);
-        vec3 H = normalize(V + Ld);
-        float NDF = distributionGGX(N, H, roughness);
-        float G = geometrySmith(N, V, Ld, roughness);
-        vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-        vec3 nominator = NDF * G * F;
-        float denom = 4.0 * max(dot(N, V), 0.0) * max(dot(N, Ld), 0.0) + 0.001;
-        vec3 specular = nominator / denom;
-        vec3 kS = F;
-        vec3 kD = (vec3(1.0) - kS) * (1.0 - metalness);
-        float NdotL = max(dot(N, Ld), 0.0);
-        vec3 diffuse = kD * baseColor / 3.14159265;
+    // Directional light with CSM shadows (only when culling is disabled).
+    if (uLightCull.tile.w < 0.5) {
+        vec3 dirColor = uShadow.dirLightColorIntensity.xyz * uShadow.dirLightColorIntensity.w;
+        if (length(dirColor) > 0.0) {
+            vec3 Ld = normalize(-uShadow.dirLightDir.xyz);
+            vec3 H = normalize(V + Ld);
+            float NDF = distributionGGX(N, H, roughness);
+            float G = geometrySmith(N, V, Ld, roughness);
+            vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
+            vec3 nominator = NDF * G * F;
+            float denom = 4.0 * max(dot(N, V), 0.0) * max(dot(N, Ld), 0.0) + 0.001;
+            vec3 specular = nominator / denom;
+            vec3 kS = F;
+            vec3 kD = (vec3(1.0) - kS) * (1.0 - metalness);
+            float NdotL = max(dot(N, Ld), 0.0);
+            vec3 diffuse = kD * baseColor / 3.14159265;
 
-        float viewDepth = - (uCamera.view * vec4(worldPos, 1.0)).z;
-        int cascade = 2;
-        if (viewDepth < uShadow.splits.x)
-            cascade = 0;
-        else if (viewDepth < uShadow.splits.y)
-            cascade = 1;
+            float viewDepth = - (uCamera.view * vec4(worldPos, 1.0)).z;
+            int cascade = 2;
+            if (viewDepth < uShadow.splits.x)
+                cascade = 0;
+            else if (viewDepth < uShadow.splits.y)
+                cascade = 1;
 
-        float bias = max(0.002 * (1.0 - dot(N, Ld)), 0.0005);
-        float shadow = shadowsEnabled ? sampleShadowMap(cascade, worldPos, bias) : 1.0;
-        Lo += (diffuse + specular) * dirColor * NdotL * shadow;
+            float bias = max(0.002 * (1.0 - dot(N, Ld)), 0.0005);
+            float shadow = shadowsEnabled ? sampleShadowMap(cascade, worldPos, bias) : 1.0;
+            Lo += (diffuse + specular) * dirColor * NdotL * shadow;
+        }
     }
 
     vec3 ambient = uLights.lightCount.yzw;

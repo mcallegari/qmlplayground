@@ -165,7 +165,9 @@ Light LightItem::toLight() const
 
 void LightItem::notifyParent()
 {
-    auto *item = qobject_cast<QQuickItem *>(parent());
-    if (item)
+    QObject *p = parent();
+    while (p && !qobject_cast<QQuickItem *>(p))
+        p = p->parent();
+    if (auto *item = qobject_cast<QQuickItem *>(p))
         item->update();
 }

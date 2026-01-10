@@ -67,12 +67,16 @@ void PassShadow::execute(FrameContext &ctx)
 
     const bool shadowsEnabled = ctx.scene->shadowsEnabled();
     const Light *dirLight = nullptr;
+    const Light *dirShadowLight = nullptr;
     for (const Light &l : ctx.scene->lights())
     {
-        if (l.type == Light::Type::Directional && l.castShadows)
-        {
+        if (l.type != Light::Type::Directional)
+            continue;
+        if (!dirLight)
             dirLight = &l;
-            break;
+        if (!dirShadowLight && l.castShadows)
+        {
+            dirShadowLight = &l;
         }
     }
     const QMatrix4x4 clipCorr = ctx.rhi->rhi()->clipSpaceCorrMatrix();
@@ -93,7 +97,7 @@ void PassShadow::execute(FrameContext &ctx)
         ctx.shadows->dirLightColorIntensity = QVector4D(dirLight->color, dirLight->intensity);
     }
 
-    if (dirLight && shadowsEnabled)
+    if (dirShadowLight && shadowsEnabled)
     {
         const Camera &cam = ctx.scene->camera();
         const float nearPlane = cam.nearPlane();
@@ -118,7 +122,7 @@ void PassShadow::execute(FrameContext &ctx)
         {
             const float cNear = splits[i];
             const float cFar = splits[i + 1];
-            QMatrix4x4 lightViewProj = clipCorr * computeLightViewProj(cam, dirLight->direction, cNear, cFar);
+            QMatrix4x4 lightViewProj = clipCorr * computeLightViewProj(cam, dirShadowLight->direction, cNear, cFar);
             m_cascades[i].lightViewProj = lightViewProj;
             ctx.shadows->lightViewProj[i] = lightViewProj;
             renderCascade(ctx, m_cascades[i], lightViewProj);

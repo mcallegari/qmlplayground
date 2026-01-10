@@ -11,9 +11,7 @@ Window {
     title: "Deferred Rendering with QRhi"
 
     property real meshStep: 0.25
-    property vector3d cubePos: Qt.vector3d(0, 0, 0)
     property vector3d lastPickPos: Qt.vector3d(0, 0, 0)
-    property var selectableItems: []
     property bool showFpsOverlay: false
     property real fpsCurrent: 0.0
     property real fpsMin: 0.0
@@ -111,29 +109,6 @@ Window {
                                                 target.y - newPos.y,
                                                 target.z - newPos.z))
     }
-    function registerSelectable(item) {
-        if (!item)
-            return
-        for (var i = 0; i < selectableItems.length; ++i) {
-            if (selectableItems[i] === item)
-                return
-        }
-        selectableItems.push(item)
-    }
-    function unregisterSelectable(item) {
-        if (!item)
-            return
-        for (var i = selectableItems.length - 1; i >= 0; --i) {
-            if (selectableItems[i] === item)
-                selectableItems.splice(i, 1)
-        }
-    }
-    function clearSelection() {
-        for (var i = 0; i < selectableItems.length; ++i) {
-            if (selectableItems[i])
-                selectableItems[i].isSelected = false
-        }
-    }
     RhiQmlItem {
         id: renderer
         objectName: "sceneRenderer"
@@ -149,24 +124,11 @@ Window {
         bloomRadius: 2.0
         moveSpeed: 5.0
         lookSensitivity: 0.2
+
         onMeshPicked: function(item, worldPos, hit, modifiers) {
-            var multi = (modifiers & Qt.ShiftModifier) !== 0
-            var canSelect = item && item.isSelected !== undefined
-            if (canSelect && item.selectable === false)
-                canSelect = false
-            if (!multi && (!hit || canSelect))
-                root.clearSelection()
             if (hit)
                 root.lastPickPos = worldPos
-            if (item && item.isSelected !== undefined && hit && canSelect) {
-                if (multi)
-                    item.isSelected = !item.isSelected
-                else
-                    item.isSelected = true
-                renderer.selectedItem = item
-            } else if (!multi && !hit) {
-                renderer.selectedItem = null
-            }
+            renderer.handlePick(item, hit, modifiers)
         }
 
         WheelHandler {
@@ -228,11 +190,19 @@ Window {
             nearPlane: 0.01
             farPlane: 300
         }
-
+/*
         Light {
             type: Light.Ambient
             color: Qt.vector3d(0.5, 0.5, 0.5)
             intensity: 1.0
+            castShadows: false
+        }
+*/
+        Light {
+            type: Light.Directional
+            direction: Qt.vector3d(0, -1.0, 0)
+            color: Qt.vector3d(1.0, 1.0, 1.0)
+            intensity: 2.0
             castShadows: false
         }
 /*
@@ -247,7 +217,7 @@ Window {
             castShadows: false
         }
 */
-
+/*
         Light {
             type: Light.Spotlight
             position: Qt.vector3d(-1, 5, 0)
@@ -275,7 +245,8 @@ Window {
             castShadows: true
             beamShape: Light.ConeShape
             beamRadius: 0.2
-            goboPath: "C:/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00024.svg"
+            //goboPath: "C:/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00024.svg"
+            goboPath: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00024.svg"
         }
 
         Light {
@@ -291,15 +262,8 @@ Window {
             beamShape: Light.BeamShape
             beamRadius: 0.3
         }
-/*
-        Light {
-            type: Light.Directional
-            direction: Qt.vector3d(-0.3, -1.0, -0.2)
-            color: Qt.vector3d(1.0, 1.0, 1.0)
-            intensity: 2.0
-            castShadows: true
-        }
 */
+
 /*
         Hazer {
             position: Qt.vector3d(0, 1.5, -2.0)
@@ -310,10 +274,16 @@ Window {
             enabled: true
         }
 */
+
+        StaticLight {
+            position: Qt.vector3d(0, 0, 0)
+            rotationDegrees: Qt.vector3d(0, 0, 0)
+            intensity: 3.5
+            color: Qt.vector3d(1.0, 0.9, 0.8)
+            zoom: 20
+        }
         Instantiator {
             model: 12
-            onObjectAdded: function(index, object) { root.registerSelectable(object) }
-            onObjectRemoved: function(index, object) { root.unregisterSelectable(object) }
             delegate: Cube {
                 property vector3d ledColor: root.ledColors[index % root.ledColors.length]
                 position: Qt.vector3d(0 + index * 0.42, -2.2, 2.5)
@@ -326,12 +296,10 @@ Window {
 
         Cube {
             id: mainCube
-            position: cubePos
+            position: Qt.vector3d(-2, 0, 0)
             rotationDegrees: Qt.vector3d(0, 0, 0)
             scale: Qt.vector3d(1, 1, 1)
             baseColor: Qt.vector3d(1, 0, 0)
-            Component.onCompleted: root.registerSelectable(this)
-            Component.onDestruction: root.unregisterSelectable(this)
         }
 
         // ground plane
@@ -341,21 +309,18 @@ Window {
             position: Qt.vector3d(0, -2.5, 0)
             rotationDegrees: Qt.vector3d(0, 0, 0)
             scale: Qt.vector3d(10, 0.2, 10)
-            Component.onCompleted: root.registerSelectable(this)
-            Component.onDestruction: root.unregisterSelectable(this)
         }
 
         Model {
             id: suzanne
-            path: "C:/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
+            //path: "C:/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
+            path: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
             //path: "/c/projects/qmlplayground/QmlRhiPipeline/models/Duck.gltf"
             position: Qt.vector3d(1.5, -1.2, 0)
             rotationDegrees: Qt.vector3d(0, -30, 0)
             scale: Qt.vector3d(1, 1, 1)
-            Component.onCompleted: root.registerSelectable(this)
-            Component.onDestruction: root.unregisterSelectable(this)
         }
-
+/*
         Sphere {
             id: metalSphere
             visible: true
@@ -365,10 +330,8 @@ Window {
             emissiveColor: Qt.vector3d(0, 0, 0)
             metalness: 1.0
             roughness: 0.15
-            Component.onCompleted: root.registerSelectable(this)
-            Component.onDestruction: root.unregisterSelectable(this)
         }
-
+*/
     }
 
     ViewGizmo {

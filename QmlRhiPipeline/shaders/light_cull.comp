@@ -50,7 +50,14 @@ void main()
         vec4 other = uLights.lightOther[i];
         int type = int(other.y + 0.5);
         if (type == 0)
+        {
+            if (count < uint(MAX_LIGHTS))
+            {
+                bLightIndex.data[base + 1u + count] = uint(i);
+                count += 1u;
+            }
             continue;
+        }
         vec4 pr = uLights.lightPosRange[i];
         float range = pr.w;
         if (range <= 0.0)

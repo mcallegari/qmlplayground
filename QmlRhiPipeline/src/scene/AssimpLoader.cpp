@@ -240,6 +240,7 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
     const aiScene *ai = importer.ReadFile(resolvedPath.toStdString(),
                                          aiProcess_Triangulate |
                                          aiProcess_GenNormals |
+                                         aiProcess_GenUVCoords |
                                          aiProcess_CalcTangentSpace |
                                          aiProcess_JoinIdenticalVertices);
     if (!ai)
@@ -251,10 +252,15 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
         const QMatrix4x4 local = toQtMatrix(node->mTransformation);
         const QMatrix4x4 world = parent * local;
 
+        const QString nodeName = QString::fromUtf8(node->mName.C_Str());
         for (unsigned int i = 0; i < node->mNumMeshes; ++i)
         {
             const aiMesh *m = ai->mMeshes[node->mMeshes[i]];
             Mesh mesh;
+            if (!nodeName.isEmpty())
+                mesh.name = nodeName;
+            else if (m->mName.length > 0)
+                mesh.name = QString::fromUtf8(m->mName.C_Str());
             mesh.modelMatrix = world;
             mesh.vertices.reserve(int(m->mNumVertices));
             mesh.indices.reserve(int(m->mNumFaces * 3));
@@ -299,6 +305,58 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
                 mesh.boundsMin = minV;
                 mesh.boundsMax = maxV;
                 mesh.boundsValid = true;
+            }
+
+            if (!mesh.vertices.isEmpty())
+            {
+                float minU = mesh.vertices[0].u;
+                float maxU = mesh.vertices[0].u;
+                float minVuv = mesh.vertices[0].v;
+                float maxVuv = mesh.vertices[0].v;
+                for (const Vertex &vtx : mesh.vertices)
+                {
+                    minU = qMin(minU, vtx.u);
+                    maxU = qMax(maxU, vtx.u);
+                    minVuv = qMin(minVuv, vtx.v);
+                    maxVuv = qMax(maxVuv, vtx.v);
+                }
+                const float rangeU = maxU - minU;
+                const float rangeV = maxVuv - minVuv;
+                if (rangeU < 1e-5f && rangeV < 1e-5f && mesh.boundsValid)
+                {
+                    const QVector3D extents = mesh.boundsMax - mesh.boundsMin;
+                    const float ex = qMax(extents.x(), 1e-5f);
+                    const float ey = qMax(extents.y(), 1e-5f);
+                    const float ez = qMax(extents.z(), 1e-5f);
+                    int dropAxis = 0; // 0=X, 1=Y, 2=Z
+                    if (ex <= ey && ex <= ez)
+                        dropAxis = 0;
+                    else if (ey <= ex && ey <= ez)
+                        dropAxis = 1;
+                    else
+                        dropAxis = 2;
+                    for (Vertex &vtx : mesh.vertices)
+                    {
+                        const float px = vtx.px;
+                        const float py = vtx.py;
+                        const float pz = vtx.pz;
+                        if (dropAxis == 0)
+                        {
+                            vtx.u = (pz - mesh.boundsMin.z()) / ez;
+                            vtx.v = (py - mesh.boundsMin.y()) / ey;
+                        }
+                        else if (dropAxis == 1)
+                        {
+                            vtx.u = (px - mesh.boundsMin.x()) / ex;
+                            vtx.v = (pz - mesh.boundsMin.z()) / ez;
+                        }
+                        else
+                        {
+                            vtx.u = (px - mesh.boundsMin.x()) / ex;
+                            vtx.v = (py - mesh.boundsMin.y()) / ey;
+                        }
+                    }
+                }
             }
 
             for (unsigned int f = 0; f < m->mNumFaces; ++f)

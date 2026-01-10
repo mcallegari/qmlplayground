@@ -4,6 +4,7 @@
 #include <QtCore/QElapsedTimer>
 #include <QtGui/QVector3D>
 #include <QtCore/QVector>
+#include <QtCore/QSet>
 #include <QtCore/QString>
 #include <QtCore/QSizeF>
 #include <QtCore/QPointF>
@@ -124,6 +125,7 @@ public:
     };
     void takePendingDragRequests(QVector<DragRequest> &out);
     Q_INVOKABLE void dispatchPickResult(QObject *item, const QVector3D &worldPos, bool hit, int modifiers);
+    Q_INVOKABLE void handlePick(QObject *item, bool hit, int modifiers);
     Q_INVOKABLE void setCameraDirection(const QVector3D &dir);
     Q_INVOKABLE void rotateFreeCamera(float yawDelta, float pitchDelta);
     Q_PROPERTY(QObject *selectedItem READ selectedItem WRITE setSelectedItem NOTIFY selectedItemChanged)
@@ -131,6 +133,7 @@ public:
     void setSelectedItem(QObject *item);
     Q_INVOKABLE void setObjectPosition(QObject *item, const QVector3D &pos);
     Q_INVOKABLE void setObjectRotation(QObject *item, const QVector3D &rotation);
+    void updateSelectableItems(const QVector<QObject *> &items);
 
 Q_SIGNALS:
     void cameraPositionChanged();
@@ -200,6 +203,7 @@ private:
     QVector<Light> m_pendingLights;
     QVector<PickRequest> m_pendingPickRequests;
     QVector<DragRequest> m_pendingDragRequests;
+    QSet<QObject *> m_selectableItems;
     QObject *m_selectedItem = nullptr;
     bool m_leftDown = false;
 };

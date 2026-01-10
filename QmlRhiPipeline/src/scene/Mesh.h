@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QtCore/QVector>
+#include <QtCore/QString>
 #include <QtGui/QMatrix4x4>
 #include <QtGui/QVector2D>
 #include <QtGui/QVector3D>
@@ -17,6 +18,7 @@ struct Vertex
 
 struct Mesh
 {
+    QString name;
     QVector<Vertex> vertices;
     QVector<quint32> indices;
     QRhiBuffer *vertexBuffer = nullptr;

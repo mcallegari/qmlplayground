@@ -236,6 +236,25 @@ void PassLighting::execute(FrameContext &ctx)
         shadowData.dirLightColorIntensity[2] = ctx.shadows->dirLightColorIntensity.z();
         shadowData.dirLightColorIntensity[3] = ctx.shadows->dirLightColorIntensity.w();
     }
+
+    if (shadowData.dirLightColorIntensity[3] <= 0.0f && ctx.scene)
+    {
+        for (const Light &l : ctx.scene->lights())
+        {
+            if (l.type != Light::Type::Directional)
+                continue;
+            const QVector3D dir = l.direction.normalized();
+            shadowData.dirLightDir[0] = dir.x();
+            shadowData.dirLightDir[1] = dir.y();
+            shadowData.dirLightDir[2] = dir.z();
+            shadowData.dirLightDir[3] = 0.0f;
+            shadowData.dirLightColorIntensity[0] = l.color.x();
+            shadowData.dirLightColorIntensity[1] = l.color.y();
+            shadowData.dirLightColorIntensity[2] = l.color.z();
+            shadowData.dirLightColorIntensity[3] = l.intensity;
+            break;
+        }
+    }
     if (ctx.shadows)
     {
         for (int i = 0; i < kMaxLights; ++i)

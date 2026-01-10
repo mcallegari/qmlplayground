@@ -25,6 +25,7 @@ add_executable(qmlrhipipeline
     src/qml/PickingUtils.cpp
     src/qml/RhiQmlItem.cpp
     src/qml/SphereItem.cpp
+    src/qml/StaticLightItem.cpp
     src/renderer/DeferredRenderer.cpp
     src/renderer/PassDepth.cpp
     src/renderer/PassGBuffer.cpp
@@ -43,6 +44,10 @@ target_include_directories(qmlrhipipeline PRIVATE src)
 
 target_link_libraries(qmlrhipipeline PRIVATE Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::Svg)
 target_link_libraries(qmlrhipipeline PRIVATE Qt6::ShaderTools Qt6::Quick Qt6::Qml)
+
+target_compile_definitions(qmlrhipipeline
+    PRIVATE FIXTURE_MESH_PATH="${CMAKE_CURRENT_SOURCE_DIR}/models/fixtures"
+)
 
 if(assimp_FOUND)
     target_link_libraries(qmlrhipipeline PRIVATE assimp::assimp)

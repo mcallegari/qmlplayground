@@ -11,6 +11,7 @@
 #include "qml/ModelItem.h"
 #include "qml/CubeItem.h"
 #include "qml/SphereItem.h"
+#include "qml/StaticLightItem.h"
 #include "qml/HazerItem.h"
 #include "qml/RhiQmlItem.h"
 
@@ -28,6 +29,7 @@ int main(int argc, char **argv)
     qmlRegisterType<ModelItem>("RhiQmlItem", 1, 0, "Model");
     qmlRegisterType<CubeItem>("RhiQmlItem", 1, 0, "Cube");
     qmlRegisterType<SphereItem>("RhiQmlItem", 1, 0, "Sphere");
+    qmlRegisterType<StaticLightItem>("RhiQmlItem", 1, 0, "StaticLight");
 
     QQmlApplicationEngine engine;
     QUrl url(QStringLiteral("qrc:/qml/Main.qml"));
