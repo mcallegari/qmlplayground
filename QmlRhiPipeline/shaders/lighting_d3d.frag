@@ -111,9 +111,14 @@ vec3 reconstructWorldPosWithDepth(vec2 uvNdc, float depth)
     return world.xyz / max(world.w, 1e-6);
 }
 
-vec2 shadowUv(vec2 uv)
+vec2 shadowUvDir(vec2 uv)
 {
     return uv;
+}
+
+vec2 shadowUvSpot(vec2 uv)
+{
+    return vec2(uv.x, 1.0 - uv.y);
 }
 
 float sampleSpotShadowDepth(vec2 uv, int slot)
@@ -179,7 +184,7 @@ float sampleShadowMap(int idx, vec3 worldPos, float bias)
         clip = uShadow.lightViewProj[2] * vec4(worldPos, 1.0);
 
     vec3 ndc = clip.xyz / clip.w;
-    vec2 uv = shadowUv(ndc.xy * 0.5 + 0.5);
+    vec2 uv = shadowUvDir(ndc.xy * 0.5 + 0.5);
     float depth = ndc.z * uShadow.shadowDepthParams.x + uShadow.shadowDepthParams.y;
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
         return 1.0;
@@ -202,7 +207,7 @@ float sampleSpotShadow(mat4 viewProj, vec3 worldPos, vec3 lightPos,
 {
     vec4 clip = viewProj * vec4(worldPos, 1.0);
     vec3 ndc = clip.xyz / clip.w;
-    vec2 uv = shadowUv(ndc.xy * 0.5 + 0.5);
+    vec2 uv = shadowUvSpot(ndc.xy * 0.5 + 0.5);
     float dist = length(lightPos - worldPos);
     float depth = (dist - nearPlane) / max(farPlane - nearPlane, 1e-6);
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
@@ -216,7 +221,7 @@ float sampleSpotShadowPcf(mat4 viewProj, vec3 worldPos, vec3 lightPos,
 {
     vec4 clip = viewProj * vec4(worldPos, 1.0);
     vec3 ndc = clip.xyz / clip.w;
-    vec2 uv = shadowUv(ndc.xy * 0.5 + 0.5);
+    vec2 uv = shadowUvSpot(ndc.xy * 0.5 + 0.5);
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
         return 1.0;
     float dist = length(lightPos - worldPos);
@@ -271,7 +276,7 @@ void main()
     vec2 uvNdc = vUv;
     if (uFlip.flip.y > 0.5)
         uvNdc.y = 1.0 - uvNdc.y;
-    vec2 uvNdcVol = vec2(uvNdc.x, 1.0 - uvNdc.y);
+    vec2 uvNdcRay = vec2(uvNdc.x, 1.0 - uvNdc.y);
 
     vec3 baseColor = texture(gbuf0, uvSample).rgb;
     float metalness = texture(gbuf0, uvSample).a;
@@ -426,12 +431,12 @@ void main()
             if (uShadow.shadowDepthParams.w > 0.5)
                 hitPos = texture(gbuf2, uvSample).rgb;
             else
-                hitPos = reconstructWorldPosWithDepth(uvNdcVol, depthSample);
+                hitPos = reconstructWorldPosWithDepth(uvNdc, depthSample);
             vec3 toHit = hitPos - uCamera.cameraPos.xyz;
             rayLen = length(toHit);
             rayDir = rayLen > 0.0 ? toHit / rayLen : vec3(0.0, 0.0, -1.0);
         } else {
-            vec4 clip = vec4(uvNdcVol * 2.0 - 1.0, 1.0, 1.0);
+            vec4 clip = vec4(uvNdcRay * 2.0 - 1.0, 1.0, 1.0);
             vec4 worldFar = uCamera.invViewProj * clip;
             worldFar.xyz /= max(worldFar.w, 0.0001);
             rayDir = normalize(worldFar.xyz - uCamera.cameraPos.xyz);

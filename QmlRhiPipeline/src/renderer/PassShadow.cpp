@@ -39,7 +39,9 @@ void PassShadow::prepare(FrameContext &ctx)
         const bool depthZeroToOne = ctx.rhi->rhi()->isClipDepthZeroToOne();
         const float depthScale = depthZeroToOne ? 1.0f : 0.5f;
         const float depthBias = depthZeroToOne ? 0.0f : 0.5f;
-        const bool reverseZ = ctx.rhi->rhi()->clipSpaceCorrMatrix()(2, 2) < 0.0f;
+        bool reverseZ = ctx.rhi->rhi()->clipSpaceCorrMatrix()(2, 2) < 0.0f;
+        if (ctx.rhi->rhi()->backend() == QRhi::D3D11)
+            reverseZ = false;
         ctx.shadows->cascadeCount = 0;
         ctx.shadows->splits = {};
         ctx.shadows->dirLightDir = {};
@@ -80,7 +82,9 @@ void PassShadow::execute(FrameContext &ctx)
         const bool depthZeroToOne = ctx.rhi->rhi()->isClipDepthZeroToOne();
         const float depthScale = depthZeroToOne ? 1.0f : 0.5f;
         const float depthBias = depthZeroToOne ? 0.0f : 0.5f;
-        const bool reverseZ = clipCorr(2, 2) < 0.0f;
+        bool reverseZ = clipCorr(2, 2) < 0.0f;
+        if (ctx.rhi->rhi()->backend() == QRhi::D3D11)
+            reverseZ = false;
         ctx.shadows->shadowDepthParams = QVector4D(depthScale, depthBias,
                                                    reverseZ ? 1.0f : 0.0f, 0.0f);
     }
