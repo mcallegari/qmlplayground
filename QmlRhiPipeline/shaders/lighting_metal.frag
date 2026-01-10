@@ -152,7 +152,6 @@ bool spotProject(mat4 viewProj, vec3 worldPos, out vec2 uv)
 
 float sampleSpotShadowDepthLod(vec2 uv, int slot, float lod)
 {
-    uv = shadowUvSpot(uv);
     if (slot == 0)
         return textureLod(spotShadowMap0, uv, lod).r;
     if (slot == 1)
