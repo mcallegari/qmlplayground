@@ -22,6 +22,8 @@ void DeferredRenderer::initialize(RhiContext *rhi, RenderTargetCache *targets, S
     m_frameCtx.lightCulling = &m_lightCulling;
 
     const bool skipLighting = qEnvironmentVariableIsSet("RHIPIPELINE_SKIP_LIGHTING");
+    const bool skipPost = qEnvironmentVariableIsSet("RHIPIPELINE_SKIP_POST");
+    m_frameCtx.lightingEnabled = !skipLighting;
     m_graph.clear();
     m_graph.addPass(std::make_unique<PassDepth>());
     m_graph.addPass(std::make_unique<PassGBuffer>());
@@ -35,7 +37,14 @@ void DeferredRenderer::initialize(RhiContext *rhi, RenderTargetCache *targets, S
     {
         m_graph.addPass(std::make_unique<PassLighting>());
     }
-    m_graph.addPass(std::make_unique<PassPost>());
+    if (skipPost)
+    {
+        qWarning() << "DeferredRenderer: skipping PassPost (RHIPIPELINE_SKIP_POST)";
+    }
+    else
+    {
+        m_graph.addPass(std::make_unique<PassPost>());
+    }
 }
 
 void DeferredRenderer::resize(const QSize &size)

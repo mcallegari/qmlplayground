@@ -12,10 +12,13 @@ layout(std140, binding = 2) uniform PostParams {
 
 void main()
 {
+    vec2 sceneUv = vUv;
+    if (uParams.intensity.w > 0.5)
+        sceneUv.y = 1.0 - sceneUv.y;
     vec2 bloomUv = vUv;
     if (uParams.intensity.z > 0.5)
         bloomUv.y = 1.0 - bloomUv.y;
-    vec3 sceneColor = texture(sceneTex, vUv).rgb;
+    vec3 sceneColor = texture(sceneTex, sceneUv).rgb;
     vec3 bloom = texture(bloomTex, bloomUv).rgb;
     float intensity = uParams.intensity.x;
     outColor = vec4(sceneColor + bloom * intensity, 1.0);

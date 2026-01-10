@@ -36,4 +36,5 @@ private:
     QRhiRenderPassDescriptor *m_swapRpDesc = nullptr;
     QRhiBuffer *m_gizmoCameraUbo = nullptr;
     QSize m_lastSize;
+    bool m_combineUsesGBuffer = false;
 };

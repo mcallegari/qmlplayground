@@ -40,7 +40,7 @@ void PassShadow::prepare(FrameContext &ctx)
         const float depthScale = depthZeroToOne ? 1.0f : 0.5f;
         const float depthBias = depthZeroToOne ? 0.0f : 0.5f;
         bool reverseZ = ctx.rhi->rhi()->clipSpaceCorrMatrix()(2, 2) < 0.0f;
-        if (ctx.rhi->rhi()->backend() == QRhi::D3D11)
+        if (ctx.rhi->rhi()->backend() == QRhi::D3D11 || ctx.rhi->rhi()->backend() == QRhi::Metal)
             reverseZ = false;
         ctx.shadows->cascadeCount = 0;
         ctx.shadows->splits = {};
@@ -83,7 +83,7 @@ void PassShadow::execute(FrameContext &ctx)
         const float depthScale = depthZeroToOne ? 1.0f : 0.5f;
         const float depthBias = depthZeroToOne ? 0.0f : 0.5f;
         bool reverseZ = clipCorr(2, 2) < 0.0f;
-        if (ctx.rhi->rhi()->backend() == QRhi::D3D11)
+        if (ctx.rhi->rhi()->backend() == QRhi::D3D11 || ctx.rhi->rhi()->backend() == QRhi::Metal)
             reverseZ = false;
         ctx.shadows->shadowDepthParams = QVector4D(depthScale, depthBias,
                                                    reverseZ ? 1.0f : 0.0f, 0.0f);
@@ -176,7 +176,9 @@ void PassShadow::ensureResources(FrameContext &ctx)
 {
     constexpr int kSpotShaderVersion = 2;
     const QMatrix4x4 clipCorr = ctx.rhi->rhi()->clipSpaceCorrMatrix();
-    const bool reverseZ = clipCorr(2, 2) < 0.0f;
+    bool reverseZ = clipCorr(2, 2) < 0.0f;
+    if (ctx.rhi->rhi()->backend() == QRhi::D3D11 || ctx.rhi->rhi()->backend() == QRhi::Metal)
+        reverseZ = false;
     const bool haveResources = m_pipeline && m_spotPipeline
                                && m_cascades[0].rt && m_cascades[0].color
                                && !m_spotShadowMaps.isEmpty()

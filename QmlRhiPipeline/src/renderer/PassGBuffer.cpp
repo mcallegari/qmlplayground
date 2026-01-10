@@ -244,6 +244,12 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
     pipeline->setCullMode(QRhiGraphicsPipeline::Back);
     pipeline->setDepthTest(true);
     pipeline->setDepthWrite(true);
+    pipeline->setTargetBlends({
+        QRhiGraphicsPipeline::TargetBlend(),
+        QRhiGraphicsPipeline::TargetBlend(),
+        QRhiGraphicsPipeline::TargetBlend(),
+        QRhiGraphicsPipeline::TargetBlend()
+    });
     pipeline->setShaderResourceBindings(m_srb);
     pipeline->setRenderPassDescriptor(m_gbuffer.rpDesc);
 

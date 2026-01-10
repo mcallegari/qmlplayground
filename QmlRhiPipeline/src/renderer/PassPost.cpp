@@ -246,8 +246,10 @@ void PassPost::prepare(FrameContext &ctx)
         m_swapRpDesc = swapRt->renderPassDescriptor();
     }
 
+    const bool debugCombine = !ctx.lightingEnabled;
     if (!m_bloomSrb || !m_bloomUpsampleSrb || !m_combineSrb
-            || !m_bloomPipeline || !m_bloomUpsamplePipeline || !m_combinePipeline)
+            || !m_bloomPipeline || !m_bloomUpsamplePipeline || !m_combinePipeline
+            || m_combineUsesGBuffer != debugCombine)
     {
         const RenderTargetCache::GBufferTargets gbuf = ctx.targets->getOrCreateGBuffer(size, 1);
         const RenderTargetCache::LightingTargets lighting = ctx.targets->getOrCreateLightingTarget(size, 1);
@@ -284,13 +286,15 @@ void PassPost::prepare(FrameContext &ctx)
             return;
 
         m_combineSrb = rhi->newShaderResourceBindings();
+        QRhiTexture *combineSource = debugCombine ? gbuf.color0 : lighting.color;
         m_combineSrb->setBindings({
-            QRhiShaderResourceBinding::sampledTexture(0, QRhiShaderResourceBinding::FragmentStage, lighting.color, m_sampler),
+            QRhiShaderResourceBinding::sampledTexture(0, QRhiShaderResourceBinding::FragmentStage, combineSource, m_sampler),
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, m_bloomBlurTex, m_sampler),
             QRhiShaderResourceBinding::uniformBuffer(2, QRhiShaderResourceBinding::FragmentStage, m_postUbo)
         });
         if (!m_combineSrb->create())
             return;
+        m_combineUsesGBuffer = debugCombine;
 
         const QRhiShaderStage vs = ctx.shaders->loadStage(QRhiShaderStage::Vertex, QStringLiteral(":/shaders/lighting.vert.qsb"));
         const QRhiShaderStage fsBloom = ctx.shaders->loadStage(QRhiShaderStage::Fragment, QStringLiteral(":/shaders/post_bloom_downsample.frag.qsb"));
@@ -339,8 +343,11 @@ void PassPost::prepare(FrameContext &ctx)
 
 void PassPost::execute(FrameContext &ctx)
 {
-    if (!ctx.rhi || !ctx.targets || !m_bloomRt || !m_bloomBlurRt
-            || !m_bloomPipeline || !m_bloomUpsamplePipeline || !m_combinePipeline)
+    const bool debugCombine = !ctx.lightingEnabled;
+    if (!ctx.rhi || !ctx.targets || !m_combinePipeline)
+        return;
+    if (!debugCombine && (!m_bloomRt || !m_bloomBlurRt
+            || !m_bloomPipeline || !m_bloomUpsamplePipeline))
         return;
     QRhiCommandBuffer *cb = ctx.rhi->commandBuffer();
     QRhiRenderTarget *swapRt = ctx.rhi->swapchainRenderTarget();
@@ -361,27 +368,36 @@ void PassPost::execute(FrameContext &ctx)
     QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
     params.pixelSize = QVector4D(1.0f / float(size.width()), 1.0f / float(size.height()), 0.0f, 0.0f);
     const bool flipSampleY = !ctx.rhi->rhi()->isYUpInFramebuffer();
-    params.intensity = QVector4D(bloomIntensity, bloomRadius, flipSampleY ? 1.0f : 0.0f, 0.0f);
+    params.intensity = QVector4D(debugCombine ? 0.0f : bloomIntensity,
+                                 debugCombine ? 0.0f : bloomRadius,
+                                 flipSampleY ? 1.0f : 0.0f,
+                                 flipSampleY ? 1.0f : 0.0f);
     u->updateDynamicBuffer(m_postUbo, 0, sizeof(PostParams), &params);
     cb->resourceUpdate(u);
-    cb->beginPass(m_bloomRt, clear, {});
-    cb->setGraphicsPipeline(m_bloomPipeline);
-    cb->setViewport(QRhiViewport(0, 0, half.width(), half.height()));
-    cb->setShaderResources(m_bloomSrb);
-    cb->draw(3);
-    cb->endPass();
+    if (!debugCombine)
+    {
+        cb->beginPass(m_bloomRt, clear, {});
+        cb->setGraphicsPipeline(m_bloomPipeline);
+        cb->setViewport(QRhiViewport(0, 0, half.width(), half.height()));
+        cb->setShaderResources(m_bloomSrb);
+        cb->draw(3);
+        cb->endPass();
 
-    u = ctx.rhi->rhi()->nextResourceUpdateBatch();
-    params.pixelSize = QVector4D(1.0f / float(half.width()), 1.0f / float(half.height()), 0.0f, 0.0f);
-    params.intensity = QVector4D(bloomIntensity, bloomRadius, flipSampleY ? 1.0f : 0.0f, 0.0f);
-    u->updateDynamicBuffer(m_postUbo, 0, sizeof(PostParams), &params);
-    cb->resourceUpdate(u);
-    cb->beginPass(m_bloomBlurRt, clear, {});
-    cb->setGraphicsPipeline(m_bloomUpsamplePipeline);
-    cb->setViewport(QRhiViewport(0, 0, size.width(), size.height()));
-    cb->setShaderResources(m_bloomUpsampleSrb);
-    cb->draw(3);
-    cb->endPass();
+        u = ctx.rhi->rhi()->nextResourceUpdateBatch();
+        params.pixelSize = QVector4D(1.0f / float(half.width()), 1.0f / float(half.height()), 0.0f, 0.0f);
+        params.intensity = QVector4D(bloomIntensity,
+                                     bloomRadius,
+                                     flipSampleY ? 1.0f : 0.0f,
+                                     flipSampleY ? 1.0f : 0.0f);
+        u->updateDynamicBuffer(m_postUbo, 0, sizeof(PostParams), &params);
+        cb->resourceUpdate(u);
+        cb->beginPass(m_bloomBlurRt, clear, {});
+        cb->setGraphicsPipeline(m_bloomUpsamplePipeline);
+        cb->setViewport(QRhiViewport(0, 0, size.width(), size.height()));
+        cb->setShaderResources(m_bloomUpsampleSrb);
+        cb->draw(3);
+        cb->endPass();
+    }
 
     cb->beginPass(swapRt, clear, {});
     cb->setGraphicsPipeline(m_combinePipeline);

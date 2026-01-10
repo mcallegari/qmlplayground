@@ -47,6 +47,7 @@ struct FrameContext
     Scene *scene = nullptr;
     ShadowData *shadows = nullptr;
     LightCullingData *lightCulling = nullptr;
+    bool lightingEnabled = true;
 };
 
 class RenderPass

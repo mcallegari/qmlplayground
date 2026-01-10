@@ -253,8 +253,10 @@ void PassLighting::execute(FrameContext &ctx)
     }
 
     QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
-    u->updateDynamicBuffer(m_lightsUbo, 0, sizeof(LightsData), &lightData);
-    u->updateDynamicBuffer(m_cameraUbo, 0, sizeof(CameraData), &camData);
+    if (m_lightsUbo)
+        u->updateDynamicBuffer(m_lightsUbo, 0, sizeof(LightsData), &lightData);
+    if (m_cameraUbo)
+        u->updateDynamicBuffer(m_cameraUbo, 0, sizeof(CameraData), &camData);
     if (m_shadowUbo)
     u->updateDynamicBuffer(m_shadowUbo, 0, sizeof(ShadowDataGpu), &shadowData);
     bool flipSampleY = !ctx.rhi->rhi()->isYUpInFramebuffer();
@@ -428,11 +430,15 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     if (!ctx.rhi || !ctx.targets || !ctx.shaders)
         return;
 
-    QRhiRenderTarget *rt = ctx.rhi->swapchainRenderTarget();
-    if (!rt)
+    QRhiRenderTarget *swapRt = ctx.rhi->swapchainRenderTarget();
+    if (!swapRt)
         return;
 
-    const QSize size = rt->pixelSize();
+    const QSize size = swapRt->pixelSize();
+    const RenderTargetCache::LightingTargets lighting = ctx.targets->getOrCreateLightingTarget(size, 1);
+    QRhiRenderTarget *rt = lighting.rt;
+    if (!rt)
+        return;
     const RenderTargetCache::GBufferTargets gbuf = ctx.targets->getOrCreateGBuffer(size, 1);
     const bool gbufChanged = gbuf.color0 != m_gbufColor0 ||
                              gbuf.color1 != m_gbufColor1 ||
@@ -441,10 +447,11 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
                              gbuf.depth != m_gbufDepth;
     const bool reverseZ = ctx.rhi->rhi()->clipSpaceCorrMatrix()(2, 2) < 0.0f;
     const bool d3d11 = ctx.rhi->rhi()->backend() == QRhi::D3D11;
+    const bool metal = ctx.rhi->rhi()->backend() == QRhi::Metal;
     const bool useLightCulling = ctx.lightCulling
             && ctx.lightCulling->enabled
             && ctx.lightCulling->tileLightIndexBuffer;
-    const bool effectiveLightCulling = useLightCulling && !d3d11;
+    const bool effectiveLightCulling = useLightCulling && !d3d11 && !metal;
     bool spotChanged = false;
     if (ctx.shadows)
     {
@@ -484,6 +491,11 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     m_spotShadowSampler = nullptr;
     delete m_goboSampler;
     m_goboSampler = nullptr;
+    delete m_selectionPipeline;
+    m_selectionPipeline = nullptr;
+    delete m_selectionSrb;
+    m_selectionSrb = nullptr;
+    m_selectionRpDesc = nullptr;
     delete m_lightsUbo;
     m_lightsUbo = nullptr;
     delete m_cameraUbo;
@@ -505,53 +517,104 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     if (!m_sampler->create())
         return;
 
-    m_shadowSampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
-                                                 QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge);
-    if (!m_shadowSampler->create())
-        return;
-
-    m_spotShadowSampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
+    if (!metal)
+    {
+        m_shadowSampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
                                                      QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge);
-    if (!m_spotShadowSampler->create())
-        return;
-    m_goboSampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
-                                               QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge);
-    if (!m_goboSampler->create())
-        return;
+        if (!m_shadowSampler->create())
+            return;
+
+        m_spotShadowSampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
+                                                         QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge);
+        if (!m_spotShadowSampler->create())
+            return;
+        m_goboSampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
+                                                   QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge);
+        if (!m_goboSampler->create())
+            return;
+    }
+    else
+    {
+        m_spotShadowSampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Nearest, QRhiSampler::Nearest, QRhiSampler::None,
+                                                         QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge);
+        if (!m_spotShadowSampler->create())
+            return;
+        m_goboSampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
+                                                   QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge);
+        if (!m_goboSampler->create())
+            return;
+    }
     m_reverseZ = reverseZ;
     m_useLightCulling = effectiveLightCulling;
 
-    struct LightsDataSize
+    if (metal)
     {
-        QVector4D lightCount;
-        QVector4D lightParams;
-        QVector4D lightFlags;
-        QVector4D lightBeam[kMaxLights];
-        QVector4D posRange[kMaxLights];
-        QVector4D colorIntensity[kMaxLights];
-        QVector4D dirInner[kMaxLights];
-        QVector4D other[kMaxLights];
-    };
-    m_lightsUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(LightsDataSize));
-    struct CameraDataSize
+        struct LightsDataSize
+        {
+            QVector4D lightCount;
+            QVector4D lightParams;
+            QVector4D lightFlags;
+            QVector4D lightBeam[kMaxLights];
+            QVector4D posRange[kMaxLights];
+            QVector4D colorIntensity[kMaxLights];
+            QVector4D dirInner[kMaxLights];
+            QVector4D other[kMaxLights];
+        };
+        m_lightsUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(LightsDataSize));
+        struct CameraDataSize
+        {
+            float view[16];
+            float invViewProj[16];
+            QVector4D cameraPos;
+        };
+        m_cameraUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer,
+                                                sizeof(CameraDataSize));
+        struct ShadowDataGpu
+        {
+            float lightViewProj[3][16];
+            float splits[4];
+            float dirLightDir[4];
+            float dirLightColorIntensity[4];
+            float spotLightViewProj[kMaxLights][16];
+            float spotShadowParams[kMaxLights][4];
+            float shadowDepthParams[4];
+        };
+        m_shadowUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(ShadowDataGpu));
+    }
+    else
     {
-        float view[16];
-        float invViewProj[16];
-        QVector4D cameraPos;
-    };
-    m_cameraUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer,
-                                            sizeof(CameraDataSize));
-    struct ShadowDataGpu
-    {
-        float lightViewProj[3][16];
-        float splits[4];
-        float dirLightDir[4];
-        float dirLightColorIntensity[4];
-        float spotLightViewProj[kMaxLights][16];
-        float spotShadowParams[kMaxLights][4];
-        float shadowDepthParams[4];
-    };
-    m_shadowUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(ShadowDataGpu));
+        struct LightsDataSize
+        {
+            QVector4D lightCount;
+            QVector4D lightParams;
+            QVector4D lightFlags;
+            QVector4D lightBeam[kMaxLights];
+            QVector4D posRange[kMaxLights];
+            QVector4D colorIntensity[kMaxLights];
+            QVector4D dirInner[kMaxLights];
+            QVector4D other[kMaxLights];
+        };
+        m_lightsUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(LightsDataSize));
+        struct CameraDataSize
+        {
+            float view[16];
+            float invViewProj[16];
+            QVector4D cameraPos;
+        };
+        m_cameraUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer,
+                                                sizeof(CameraDataSize));
+        struct ShadowDataGpu
+        {
+            float lightViewProj[3][16];
+            float splits[4];
+            float dirLightDir[4];
+            float dirLightColorIntensity[4];
+            float spotLightViewProj[kMaxLights][16];
+            float spotShadowParams[kMaxLights][4];
+            float shadowDepthParams[4];
+        };
+        m_shadowUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(ShadowDataGpu));
+    }
     m_flipUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D));
     if (m_useLightCulling)
     {
@@ -563,8 +626,18 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
         if (!m_lightIndexBuffer)
             return;
     }
-    if (!m_lightsUbo->create() || !m_cameraUbo->create() || !m_shadowUbo->create() || !m_flipUbo->create())
+    if (!m_flipUbo->create())
         return;
+    if (metal)
+    {
+        if (!m_lightsUbo->create() || !m_cameraUbo->create() || !m_shadowUbo->create())
+            return;
+    }
+    else
+    {
+        if (!m_lightsUbo->create() || !m_cameraUbo->create() || !m_shadowUbo->create())
+            return;
+    }
 
     if (!gbuf.color0 || !gbuf.color1 || !gbuf.color2 || !gbuf.color3)
     {
@@ -597,7 +670,31 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
 
     m_srb = ctx.rhi->rhi()->newShaderResourceBindings();
     QVector<QRhiShaderResourceBinding> bindings;
-    if (d3d11)
+    if (metal)
+    {
+        bindings = {
+            QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::FragmentStage, m_flipUbo),
+            QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, gbuf.color0, m_sampler),
+            QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, gbuf.color3, m_sampler),
+            QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, gbuf.color1, m_sampler),
+            QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage, gbuf.color2, m_sampler),
+            QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage, gbuf.depth, m_sampler),
+            QRhiShaderResourceBinding::uniformBuffer(6, QRhiShaderResourceBinding::FragmentStage, m_lightsUbo),
+            QRhiShaderResourceBinding::uniformBuffer(7, QRhiShaderResourceBinding::FragmentStage, m_cameraUbo),
+            QRhiShaderResourceBinding::uniformBuffer(8, QRhiShaderResourceBinding::FragmentStage, m_shadowUbo)
+        };
+        for (int i = 0; i < kMaxSpotShadows; ++i)
+        {
+            QRhiTexture *spotTex = ctx.shadows ? ctx.shadows->spotShadowMaps[i] : nullptr;
+            if (!spotTex)
+                spotTex = gbuf.depth;
+            bindings.push_back(QRhiShaderResourceBinding::sampledTexture(8 + i, QRhiShaderResourceBinding::FragmentStage,
+                                                                         spotTex, m_spotShadowSampler));
+        }
+        bindings.push_back(QRhiShaderResourceBinding::sampledTexture(16, QRhiShaderResourceBinding::FragmentStage,
+                                                                     m_spotGoboMap, m_goboSampler));
+    }
+    else if (d3d11)
     {
         bindings = {
             QRhiShaderResourceBinding::sampledTexture(0, QRhiShaderResourceBinding::FragmentStage, gbuf.color0, m_sampler),
@@ -630,7 +727,7 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
         }
     }
 
-    if (ctx.shadows && ctx.shadows->shadowMaps[0])
+    if (!metal && ctx.shadows && ctx.shadows->shadowMaps[0])
     {
         const int base = d3d11 ? 3 : 6;
         bindings.push_back(QRhiShaderResourceBinding::sampledTexture(base + 0, QRhiShaderResourceBinding::FragmentStage, ctx.shadows->shadowMaps[0], m_shadowSampler));
@@ -639,7 +736,7 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
         for (int i = 0; i < 3; ++i)
             m_shadowMapRefs[i] = ctx.shadows->shadowMaps[i];
     }
-    else
+    else if (!metal)
     {
         const int base = d3d11 ? 3 : 6;
         bindings.push_back(QRhiShaderResourceBinding::sampledTexture(base + 0, QRhiShaderResourceBinding::FragmentStage, gbuf.depth, m_shadowSampler));
@@ -648,29 +745,32 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
         for (int i = 0; i < 3; ++i)
             m_shadowMapRefs[i] = nullptr;
     }
-    const int spotShadowBindings = d3d11 ? 7 : kMaxSpotShadows;
-    for (int i = 0; i < spotShadowBindings; ++i)
+    if (!metal)
     {
-        QRhiTexture *spotTex = ctx.shadows ? ctx.shadows->spotShadowMaps[i] : nullptr;
-        if (!spotTex)
-            spotTex = gbuf.depth;
-        const int base = d3d11 ? 6 : 9;
-        bindings.push_back(QRhiShaderResourceBinding::sampledTexture(base + i, QRhiShaderResourceBinding::FragmentStage,
-                                                                     spotTex, m_spotShadowSampler));
-    }
-    if (d3d11)
-    {
-        bindings.push_back(QRhiShaderResourceBinding::sampledTexture(13, QRhiShaderResourceBinding::FragmentStage,
-                                                                     gbuf.depth, m_sampler));
-        bindings.push_back(QRhiShaderResourceBinding::sampledTexture(14, QRhiShaderResourceBinding::FragmentStage,
-                                                                     m_spotGoboMap, m_goboSampler));
-    }
-    else
-    {
-        bindings.push_back(QRhiShaderResourceBinding::sampledTexture(17, QRhiShaderResourceBinding::FragmentStage,
-                                                                     gbuf.depth, m_sampler));
-        bindings.push_back(QRhiShaderResourceBinding::sampledTexture(18, QRhiShaderResourceBinding::FragmentStage,
-                                                                     m_spotGoboMap, m_goboSampler));
+        const int spotShadowBindings = d3d11 ? 7 : kMaxSpotShadows;
+        for (int i = 0; i < spotShadowBindings; ++i)
+        {
+            QRhiTexture *spotTex = ctx.shadows ? ctx.shadows->spotShadowMaps[i] : nullptr;
+            if (!spotTex)
+                spotTex = gbuf.depth;
+            const int base = d3d11 ? 6 : 9;
+            bindings.push_back(QRhiShaderResourceBinding::sampledTexture(base + i, QRhiShaderResourceBinding::FragmentStage,
+                                                                         spotTex, m_spotShadowSampler));
+        }
+        if (d3d11)
+        {
+            bindings.push_back(QRhiShaderResourceBinding::sampledTexture(13, QRhiShaderResourceBinding::FragmentStage,
+                                                                         gbuf.depth, m_sampler));
+            bindings.push_back(QRhiShaderResourceBinding::sampledTexture(14, QRhiShaderResourceBinding::FragmentStage,
+                                                                         m_spotGoboMap, m_goboSampler));
+        }
+        else
+        {
+            bindings.push_back(QRhiShaderResourceBinding::sampledTexture(17, QRhiShaderResourceBinding::FragmentStage,
+                                                                         gbuf.depth, m_sampler));
+            bindings.push_back(QRhiShaderResourceBinding::sampledTexture(18, QRhiShaderResourceBinding::FragmentStage,
+                                                                         m_spotGoboMap, m_goboSampler));
+        }
     }
 
     m_srb->setBindings(bindings.begin(), bindings.end());
@@ -683,6 +783,8 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     QString fragPath;
     if (d3d11)
         fragPath = QStringLiteral(":/shaders/lighting_d3d.frag.qsb");
+    else if (metal)
+        fragPath = QStringLiteral(":/shaders/lighting_metal.frag.qsb");
     else
         fragPath = m_useLightCulling
                 ? QStringLiteral(":/shaders/lighting_cull.frag.qsb")
@@ -713,6 +815,8 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
 void PassLighting::ensureSelectionBoxesPipeline(FrameContext &ctx, QRhiRenderTarget *rt)
 {
     if (!ctx.rhi || !ctx.shaders || !rt || !ctx.targets)
+        return;
+    if (!m_sampler)
         return;
 
     if (m_selectionPipeline && m_selectionRpDesc == rt->renderPassDescriptor())
@@ -750,13 +854,17 @@ void PassLighting::ensureSelectionBoxesPipeline(FrameContext &ctx, QRhiRenderTar
     if (!m_selectionVbuf->create())
         return;
 
+    QRhiTexture *gbufDepth = ctx.targets->getOrCreateGBuffer(rt->pixelSize(), 1).depth;
+    if (!gbufDepth)
+        return;
+
     m_selectionSrb = ctx.rhi->rhi()->newShaderResourceBindings();
     m_selectionSrb->setBindings({
         QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::VertexStage, m_selectionUbo),
         QRhiShaderResourceBinding::uniformBuffer(1, QRhiShaderResourceBinding::FragmentStage, m_selectionDepthUbo),
         QRhiShaderResourceBinding::uniformBuffer(2, QRhiShaderResourceBinding::FragmentStage, m_selectionScreenUbo),
         QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage,
-                                                  ctx.targets->getOrCreateGBuffer(rt->pixelSize(), 1).depth,
+                                                  gbufDepth,
                                                   m_sampler)
     });
     if (!m_selectionSrb->create())

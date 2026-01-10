@@ -40,6 +40,13 @@ void PassLightCulling::prepare(FrameContext &ctx)
     QRhi *rhi = ctx.rhi->rhi();
     if (!rhi)
         return;
+    if (rhi->backend() == QRhi::Metal)
+    {
+        // Metal path: avoid storage-buffer based light culling until validated.
+        ctx.lightCulling->enabled = false;
+        ctx.lightCulling->tileLightIndexBuffer = nullptr;
+        return;
+    }
 
     const bool supported = rhi->isFeatureSupported(QRhi::Compute);
     ctx.lightCulling->enabled = supported;
