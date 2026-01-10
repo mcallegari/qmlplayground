@@ -126,6 +126,7 @@ public:
     void takePendingDragRequests(QVector<DragRequest> &out);
     Q_INVOKABLE void dispatchPickResult(QObject *item, const QVector3D &worldPos, bool hit, int modifiers);
     Q_INVOKABLE void handlePick(QObject *item, bool hit, int modifiers);
+    Q_INVOKABLE void removeSelectedItems();
     Q_INVOKABLE void setCameraDirection(const QVector3D &dir);
     Q_INVOKABLE void rotateFreeCamera(float yawDelta, float pitchDelta);
     Q_PROPERTY(QObject *selectedItem READ selectedItem WRITE setSelectedItem NOTIFY selectedItemChanged)
@@ -188,6 +189,8 @@ private:
     bool m_moveBackward = false;
     bool m_moveLeft = false;
     bool m_moveRight = false;
+    bool m_moveUp = false;
+    bool m_moveDown = false;
     bool m_looking = false;
     bool m_panning = false;
     QPointF m_lastMousePos = QPointF(0.0, 0.0);

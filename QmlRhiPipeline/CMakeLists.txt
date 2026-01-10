@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui ShaderTools GuiPrivate Quick Qml Svg)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui ShaderTools GuiPrivate Quick Qml Svg QuickControls2)
 find_package(assimp QUIET)
 
 add_executable(qmlrhipipeline
@@ -21,6 +21,7 @@ add_executable(qmlrhipipeline
     src/qml/LightItem.cpp
     src/qml/MeshItem.cpp
     src/qml/MeshUtils.cpp
+    src/qml/MovingHeadItem.cpp
     src/qml/ModelItem.cpp
     src/qml/PickingUtils.cpp
     src/qml/RhiQmlItem.cpp
@@ -43,10 +44,11 @@ add_executable(qmlrhipipeline
 target_include_directories(qmlrhipipeline PRIVATE src)
 
 target_link_libraries(qmlrhipipeline PRIVATE Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::Svg)
-target_link_libraries(qmlrhipipeline PRIVATE Qt6::ShaderTools Qt6::Quick Qt6::Qml)
+target_link_libraries(qmlrhipipeline PRIVATE Qt6::ShaderTools Qt6::Quick Qt6::Qml Qt6::QuickControls2)
 
 target_compile_definitions(qmlrhipipeline
     PRIVATE FIXTURE_MESH_PATH="${CMAKE_CURRENT_SOURCE_DIR}/models/fixtures"
+            GOBO_PATH="${CMAKE_CURRENT_SOURCE_DIR}/gobos"
 )
 
 if(assimp_FOUND)
@@ -92,5 +94,6 @@ qt_add_resources(qmlrhipipeline qmlrhipipeline_qml
     PREFIX "/"
     FILES
         qml/Main.qml
+        qml/SidePanel.qml
         qml/ViewGizmo.qml
 )

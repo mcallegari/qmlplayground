@@ -8,6 +8,7 @@
 #include "qml/CameraItem.h"
 #include "qml/LightItem.h"
 #include "qml/MeshItem.h"
+#include "qml/MovingHeadItem.h"
 #include "qml/ModelItem.h"
 #include "qml/CubeItem.h"
 #include "qml/SphereItem.h"
@@ -27,6 +28,7 @@ int main(int argc, char **argv)
     qmlRegisterType<HazerItem>("RhiQmlItem", 1, 0, "Hazer");
     qmlRegisterType<CameraItem>("RhiQmlItem", 1, 0, "Camera");
     qmlRegisterType<ModelItem>("RhiQmlItem", 1, 0, "Model");
+    qmlRegisterType<MovingHeadItem>("RhiQmlItem", 1, 0, "MovingHeadLight");
     qmlRegisterType<CubeItem>("RhiQmlItem", 1, 0, "Cube");
     qmlRegisterType<SphereItem>("RhiQmlItem", 1, 0, "Sphere");
     qmlRegisterType<StaticLightItem>("RhiQmlItem", 1, 0, "StaticLight");

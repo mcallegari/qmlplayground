@@ -1,6 +1,7 @@
 import QtQuick 2.15
 import QtQuick.Window 2.15
 import QtQml 2.15
+import QtQuick.Controls 2.15
 import RhiQmlItem 1.0
 
 Window {
@@ -217,7 +218,7 @@ Window {
             castShadows: false
         }
 */
-/*
+
         Light {
             type: Light.Spotlight
             position: Qt.vector3d(-1, 5, 0)
@@ -232,7 +233,7 @@ Window {
             beamRadius: 0.15
             //goboPath: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00013.svg"
         }
-
+/*
         Light {
             type: Light.Spotlight
             position: Qt.vector3d(0.5, 5, 0)
@@ -274,14 +275,16 @@ Window {
             enabled: true
         }
 */
-
+/*
         StaticLight {
-            position: Qt.vector3d(0, 0, 0)
-            rotationDegrees: Qt.vector3d(0, 0, 0)
+            position: Qt.vector3d(-3, 0, 0)
+            rotationDegrees: Qt.vector3d(-90, 0, 0)
             intensity: 3.5
             color: Qt.vector3d(1.0, 0.9, 0.8)
             zoom: 20
+            //goboPath: "gobos/open.svg"
         }
+*/
         Instantiator {
             model: 12
             delegate: Cube {
@@ -293,7 +296,7 @@ Window {
                 emissiveColor: root.scaleColor(ledColor, 3.0)
             }
         }
-
+/*
         Cube {
             id: mainCube
             position: Qt.vector3d(-2, 0, 0)
@@ -301,7 +304,7 @@ Window {
             scale: Qt.vector3d(1, 1, 1)
             baseColor: Qt.vector3d(1, 0, 0)
         }
-
+*/
         // ground plane
         Cube {
             id: groundPlane
@@ -310,7 +313,7 @@ Window {
             rotationDegrees: Qt.vector3d(0, 0, 0)
             scale: Qt.vector3d(10, 0.2, 10)
         }
-
+/*
         Model {
             id: suzanne
             //path: "C:/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
@@ -320,6 +323,7 @@ Window {
             rotationDegrees: Qt.vector3d(0, -30, 0)
             scale: Qt.vector3d(1, 1, 1)
         }
+*/
 /*
         Sphere {
             id: metalSphere
@@ -336,10 +340,20 @@ Window {
 
     ViewGizmo {
         anchors.top: parent.top
-        anchors.right: parent.right
+        anchors.right: sidePanel.left
         anchors.margins: 12
         renderer: renderer
         snapCamera: root.snapCamera
+    }
+
+    SidePanel {
+        id: sidePanel
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        renderer: renderer
+        selectedItem: renderer.selectedItem
+        spawnPosition: root.lastPickPos
     }
 
     Rectangle {

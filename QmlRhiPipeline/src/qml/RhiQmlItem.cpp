@@ -14,6 +14,7 @@
 #include <QtGui/QQuaternion>
 #include <QtGui/QKeyEvent>
 #include <QtCore/QHash>
+#include <QtCore/QSet>
 
 #include "core/RhiContext.h"
 #include "core/RenderTargetCache.h"
@@ -25,6 +26,7 @@
 #include "qml/HazerItem.h"
 #include "qml/ModelItem.h"
 #include "qml/StaticLightItem.h"
+#include "qml/MovingHeadItem.h"
 #include "qml/CubeItem.h"
 #include "qml/SphereItem.h"
 #include "qml/MeshItem.h"
@@ -141,6 +143,38 @@ static void applyTransform(QVector<Mesh> &meshes,
     }
 }
 
+static QMatrix4x4 rotateAroundPivot(const QVector3D &pivot, const QQuaternion &rotation)
+{
+    QMatrix4x4 mat;
+    mat.translate(pivot);
+    mat.rotate(rotation);
+    mat.translate(-pivot);
+    return mat;
+}
+
+enum class MovingHeadPart
+{
+    Base,
+    Arm,
+    Head,
+    HeadChild,
+    Other
+};
+
+static MovingHeadPart movingHeadPartForName(const QString &name)
+{
+    const QString lower = name.toLower();
+    if (lower.contains(QLatin1String("emitter")) || lower.contains(QLatin1String("handle")))
+        return MovingHeadPart::HeadChild;
+    if (lower.contains(QLatin1String("head")))
+        return MovingHeadPart::Head;
+    if (lower.contains(QLatin1String("arm")))
+        return MovingHeadPart::Arm;
+    if (lower.contains(QLatin1String("base")))
+        return MovingHeadPart::Base;
+    return MovingHeadPart::Other;
+}
+
 static void applySelectionVisibility(QVector<Mesh> &meshes,
                                      int firstMesh,
                                      int meshCount,
@@ -221,6 +255,65 @@ static TransformInfo transformFromRecord(const RecordT &record)
     return makeTransform(record.position, record.rotationDegrees, record.scale);
 }
 
+template <typename RecordT>
+static void applyMovingHeadTransforms(RecordT &record,
+                                      QVector<Mesh> &meshes,
+                                      const TransformInfo &transform,
+                                      const QVector3D &position,
+                                      float panDegrees,
+                                      float tiltDegrees,
+                                      bool setBase)
+{
+    if (setBase)
+    {
+        for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+            meshes[i].baseModelMatrix = meshes[i].modelMatrix;
+    }
+
+    if (!record.pivotsValid)
+    {
+        record.armMesh = -1;
+        record.headMesh = -1;
+        for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+        {
+            const MovingHeadPart part = movingHeadPartForName(meshes[i].name);
+            if (part == MovingHeadPart::Arm && record.armMesh < 0)
+                record.armMesh = i;
+            if (part == MovingHeadPart::Head && record.headMesh < 0)
+                record.headMesh = i;
+        }
+        if (record.armMesh >= 0)
+            record.armPivot = meshes[record.armMesh].baseModelMatrix.column(3).toVector3D();
+        else
+            record.armPivot = QVector3D(0.0f, 0.0f, 0.0f);
+        if (record.headMesh >= 0)
+            record.headPivot = meshes[record.headMesh].baseModelMatrix.column(3).toVector3D();
+        else
+            record.headPivot = QVector3D(0.0f, 0.0f, 0.0f);
+        record.pivotsValid = true;
+    }
+
+    const QQuaternion panRot = QQuaternion::fromAxisAndAngle(0.0f, 1.0f, 0.0f, panDegrees);
+    const QVector3D tiltAxis = panRot.rotatedVector(QVector3D(1.0f, 0.0f, 0.0f));
+    const QQuaternion tiltRot = QQuaternion::fromAxisAndAngle(tiltAxis, tiltDegrees);
+    const QMatrix4x4 panMatrix = rotateAroundPivot(record.armPivot, panRot);
+    const QVector3D headPivotRotated = (panMatrix * QVector4D(record.headPivot, 1.0f)).toVector3D();
+    const QMatrix4x4 tiltMatrix = rotateAroundPivot(headPivotRotated, tiltRot);
+
+    for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+    {
+        Mesh &mesh = meshes[i];
+        const MovingHeadPart part = movingHeadPartForName(mesh.name);
+        QMatrix4x4 local = mesh.baseModelMatrix;
+        if (part == MovingHeadPart::Arm)
+            local = panMatrix * local;
+        else if (part == MovingHeadPart::Head || part == MovingHeadPart::HeadChild)
+            local = tiltMatrix * (panMatrix * local);
+        mesh.modelMatrix = transform.matrix * local;
+        mesh.userOffset = position;
+    }
+}
+
 static void hideEmitterMeshes(QVector<Mesh> &meshes, int firstMesh, int meshCount)
 {
     for (int i = firstMesh; i < firstMesh + meshCount; ++i)
@@ -243,6 +336,26 @@ static ItemT *pickHitForRecords(const QVector<RecordT> &records, int meshIndex)
             return const_cast<ItemT *>(record.item);
     }
     return nullptr;
+}
+
+template <typename RecordT, typename ItemT>
+static void pruneMissingRecords(QVector<RecordT> &records,
+                                const QList<ItemT *> &liveItems,
+                                QVector<Mesh> &meshes)
+{
+    QSet<const ItemT *> live;
+    live.reserve(liveItems.size());
+    for (const ItemT *item : liveItems)
+        live.insert(item);
+
+    for (int i = records.size() - 1; i >= 0; --i)
+    {
+        const RecordT &record = records[i];
+        if (live.contains(record.item))
+            continue;
+        applySelectionVisibility(meshes, record.firstMesh, record.meshCount, false, false, false);
+        records.removeAt(i);
+    }
 }
 
 class RhiQmlItemRenderer final : public QQuickRhiItemRenderer
@@ -284,6 +397,7 @@ public:
         QHash<const LightItem *, LightTransform> staticLightTransforms;
         QHash<const StaticLightItem *, LightTransform> staticLightItemTransforms;
         QHash<const StaticLightItem *, QVector<EmitterData>> staticLightEmitters;
+        QHash<const MovingHeadItem *, QVector<EmitterData>> movingHeadEmitters;
 
         QVector<RhiQmlItem::PendingModel> models;
         QVector<QObject *> selectableItems;
@@ -335,6 +449,7 @@ public:
             m_staticLights.push_back(light);
 
         const auto qmlModels = qmlItem->findChildren<ModelItem *>(QString(), Qt::FindChildrenRecursively);
+        pruneMissingRecords(m_qmlModels, qmlModels, m_scene.meshes());
         for (const ModelItem *modelItem : qmlModels)
         {
             if (modelItem->path().isEmpty())
@@ -387,6 +502,7 @@ public:
         }
 
         const auto qmlStaticLights = qmlItem->findChildren<StaticLightItem *>(QString(), Qt::FindChildrenRecursively);
+        pruneMissingRecords(m_qmlStaticLights, qmlStaticLights, m_scene.meshes());
         for (const StaticLightItem *staticLight : qmlStaticLights)
         {
             if (staticLight->path().isEmpty())
@@ -454,7 +570,100 @@ public:
             m_qmlStaticLights.push_back(record);
         }
 
+        const auto qmlMovingHeads = qmlItem->findChildren<MovingHeadItem *>(QString(), Qt::FindChildrenRecursively);
+        pruneMissingRecords(m_qmlMovingHeads, qmlMovingHeads, m_scene.meshes());
+        for (const MovingHeadItem *movingHead : qmlMovingHeads)
+        {
+            if (movingHead->path().isEmpty())
+                continue;
+            if (movingHead->selectable())
+                selectableItems.push_back(const_cast<MovingHeadItem *>(movingHead));
+            bool found = false;
+            for (MovingHeadRecord &record : m_qmlMovingHeads)
+            {
+                if (record.item != movingHead)
+                    continue;
+                found = true;
+                if (record.path != movingHead->path())
+                {
+                    qWarning() << "RhiQmlItemRenderer: moving head path changed after load for" << movingHead->path();
+                    break;
+                }
+                const bool transformDirty = syncTransformFromItem(record, movingHead, m_scene.meshes());
+                syncSelectionVisibilityFromItem(record, movingHead, m_scene.meshes());
+                const float pan = movingHead->pan();
+                const float tilt = movingHead->tilt();
+                if (transformDirty || !qFuzzyCompare(record.pan, pan) || !qFuzzyCompare(record.tilt, tilt))
+                {
+                    record.pan = pan;
+                    record.tilt = tilt;
+                    const TransformInfo transform = transformFromRecord(record);
+                    applyMovingHeadTransforms(record, m_scene.meshes(), transform,
+                                              record.position, record.pan, record.tilt, false);
+                }
+                hideEmitterMeshes(m_scene.meshes(), record.firstMesh, record.meshCount);
+                QVector<EmitterData> emitters = collectEmitters(m_scene.meshes(), record.firstMesh, record.meshCount);
+                if (record.headMesh >= 0)
+                {
+                    const QVector3D axis = -m_scene.meshes()[record.headMesh].modelMatrix.column(1).toVector3D();
+                    if (!axis.isNull())
+                    {
+                        const QVector3D dir = axis.normalized();
+                        for (EmitterData &emitter : emitters)
+                            emitter.direction = dir;
+                    }
+                }
+                movingHeadEmitters.insert(movingHead, emitters);
+                break;
+            }
+            if (found)
+                continue;
+
+            const int beforeCount = m_scene.meshes().size();
+            if (!m_loader.loadModel(movingHead->path(), m_scene, true))
+            {
+                qWarning() << "RhiQmlItemRenderer: failed to load moving head model" << movingHead->path();
+                continue;
+            }
+            const int meshCount = m_scene.meshes().size() - beforeCount;
+            MovingHeadRecord record;
+            record.item = movingHead;
+            record.path = movingHead->path();
+            record.position = movingHead->position();
+            record.rotationDegrees = movingHead->rotationDegrees();
+            record.scale = movingHead->scale();
+            record.pan = movingHead->pan();
+            record.tilt = movingHead->tilt();
+            record.selected = movingHead->isSelected();
+            record.selectable = movingHead->selectable();
+            record.visible = movingHead->visible();
+            record.firstMesh = beforeCount;
+            record.meshCount = meshCount;
+
+            const TransformInfo transform = transformFromRecord(record);
+            applyMovingHeadTransforms(record, m_scene.meshes(), transform,
+                                      record.position, record.pan, record.tilt, true);
+            applySelectionVisibility(m_scene.meshes(), record.firstMesh, record.meshCount,
+                                     record.selected, record.selectable, record.visible);
+            hideEmitterMeshes(m_scene.meshes(), record.firstMesh, record.meshCount);
+            QVector<EmitterData> emitters = collectEmitters(m_scene.meshes(), record.firstMesh, record.meshCount);
+            if (record.headMesh >= 0)
+            {
+                const QVector3D axis = -m_scene.meshes()[record.headMesh].modelMatrix.column(1).toVector3D();
+                if (!axis.isNull())
+                {
+                    const QVector3D dir = axis.normalized();
+                    for (EmitterData &emitter : emitters)
+                        emitter.direction = dir;
+                }
+            }
+            movingHeadEmitters.insert(movingHead, emitters);
+
+            m_qmlMovingHeads.push_back(record);
+        }
+
         const auto qmlCubes = qmlItem->findChildren<CubeItem *>(QString(), Qt::FindChildrenRecursively);
+        pruneMissingRecords(m_qmlCubes, qmlCubes, m_scene.meshes());
         for (const CubeItem *cubeItem : qmlCubes)
         {
             if (cubeItem->selectable())
@@ -516,6 +725,7 @@ public:
         }
 
         const auto qmlSpheres = qmlItem->findChildren<SphereItem *>(QString(), Qt::FindChildrenRecursively);
+        pruneMissingRecords(m_qmlSpheres, qmlSpheres, m_scene.meshes());
         for (const SphereItem *sphereItem : qmlSpheres)
         {
             if (sphereItem->selectable())
@@ -606,6 +816,23 @@ public:
             if (!light.direction.isNull())
                 light.direction = it.value().rotation.rotatedVector(light.direction).normalized();
             m_scene.lights().push_back(light);
+        }
+        for (auto it = movingHeadEmitters.cbegin(); it != movingHeadEmitters.cend(); ++it)
+        {
+            const MovingHeadItem *itemPtr = it.key();
+            const QVector<EmitterData> emitters = it.value();
+            if (emitters.isEmpty())
+                continue;
+            for (const EmitterData &emitter : emitters)
+            {
+                Light light = itemPtr->toLight();
+                light.position = emitter.position;
+                if (!emitter.direction.isNull())
+                    light.direction = emitter.direction.normalized();
+                if (emitter.diameter > 0.0f)
+                    light.beamRadius = emitter.diameter * 0.5f;
+                m_scene.lights().push_back(light);
+            }
         }
         const auto qmlLights = qmlItem->findChildren<LightItem *>(QString(), Qt::FindChildrenRecursively);
         for (const LightItem *lightItem : qmlLights)
@@ -824,6 +1051,8 @@ public:
                     if (!hitItem)
                         hitItem = pickHitForRecords<StaticLightRecord, StaticLightItem>(m_qmlStaticLights, hit.meshIndex);
                     if (!hitItem)
+                        hitItem = pickHitForRecords<MovingHeadRecord, MovingHeadItem>(m_qmlMovingHeads, hit.meshIndex);
+                    if (!hitItem)
                         hitItem = pickHitForRecords<CubeRecord, CubeItem>(m_qmlCubes, hit.meshIndex);
                     if (!hitItem)
                         hitItem = pickHitForRecords<SphereRecord, SphereItem>(m_qmlSpheres, hit.meshIndex);
@@ -891,6 +1120,27 @@ private:
         int meshCount = 0;
     };
     QVector<StaticLightRecord> m_qmlStaticLights;
+    struct MovingHeadRecord
+    {
+        const MovingHeadItem *item = nullptr;
+        QString path;
+        QVector3D position;
+        QVector3D rotationDegrees;
+        QVector3D scale;
+        float pan = 0.0f;
+        float tilt = 0.0f;
+        bool selected = false;
+        bool selectable = true;
+        bool visible = true;
+        int firstMesh = 0;
+        int meshCount = 0;
+        int armMesh = -1;
+        int headMesh = -1;
+        QVector3D armPivot = QVector3D(0.0f, 0.0f, 0.0f);
+        QVector3D headPivot = QVector3D(0.0f, 0.0f, 0.0f);
+        bool pivotsValid = false;
+    };
+    QVector<MovingHeadRecord> m_qmlMovingHeads;
     struct CubeRecord
     {
         const CubeItem *item = nullptr;
@@ -1063,6 +1313,29 @@ private:
             }
         }
 
+        for (const MovingHeadRecord &record : m_qmlMovingHeads)
+        {
+            if (!record.selected)
+                continue;
+            QVector3D minV;
+            QVector3D maxV;
+            bool hasBounds = false;
+            for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
+            {
+                const Mesh &mesh = m_scene.meshes()[i];
+                if (!mesh.visible)
+                    continue;
+                if (!mesh.selectable)
+                    continue;
+                accumulateMeshBounds(mesh, minV, maxV, hasBounds);
+            }
+            if (hasBounds)
+            {
+                sum += (minV + maxV) * 0.5f;
+                ++count;
+            }
+        }
+
         for (const CubeRecord &record : m_qmlCubes)
         {
             if (!record.selected)
@@ -1134,6 +1407,14 @@ private:
                                         record.position,
                                         record.rotationDegrees });
         }
+        for (const MovingHeadRecord &record : m_qmlMovingHeads)
+        {
+            if (!record.selected)
+                continue;
+            m_dragSelection.push_back({ const_cast<MovingHeadItem *>(record.item),
+                                        record.position,
+                                        record.rotationDegrees });
+        }
         for (const CubeRecord &record : m_qmlCubes)
         {
             if (!record.selected)
@@ -1197,9 +1478,8 @@ private:
     {
         const float distance = (cameraPos - pos).length();
         const float axisLength = qMax(0.2f, distance * 0.2f);
-        const float shaftRadius = axisLength * 0.025f;
-        const float headLength = axisLength * 0.2f;
-        const float headRadius = axisLength * 0.06f;
+        const float shaftRadius = axisLength * 0.06f;
+        const float headSize = axisLength * 0.14f;
         const float arcRadius = axisLength * 0.5f;
         const float arcScale = arcRadius;
 
@@ -1232,13 +1512,8 @@ private:
             else if (part.type == 1)
             {
                 QMatrix4x4 headM;
-                headM.translate(pos + dir * (axisLength + headLength * 0.5f));
-                if (axis == 0)
-                    headM.scale(headLength, headRadius, headRadius);
-                else if (axis == 1)
-                    headM.scale(headRadius, headLength, headRadius);
-                else
-                    headM.scale(headRadius, headRadius, headLength);
+                headM.translate(pos + dir * (axisLength + headSize * 0.5f));
+                headM.scale(headSize, headSize, headSize);
                 mesh.modelMatrix = headM;
             }
             else
@@ -1501,6 +1776,10 @@ void RhiQmlItem::keyPressEvent(QKeyEvent *event)
         m_moveLeft = true;
     else if (event->key() == Qt::Key_D)
         m_moveRight = true;
+    else if (event->key() == Qt::Key_Q)
+        m_moveDown = true;
+    else if (event->key() == Qt::Key_E)
+        m_moveUp = true;
     else
         QQuickRhiItem::keyPressEvent(event);
 }
@@ -1520,12 +1799,17 @@ void RhiQmlItem::keyReleaseEvent(QKeyEvent *event)
         m_moveLeft = false;
     else if (event->key() == Qt::Key_D)
         m_moveRight = false;
+    else if (event->key() == Qt::Key_Q)
+        m_moveDown = false;
+    else if (event->key() == Qt::Key_E)
+        m_moveUp = false;
     else
         QQuickRhiItem::keyReleaseEvent(event);
 }
 
 void RhiQmlItem::mousePressEvent(QMouseEvent *event)
 {
+    forceActiveFocus(Qt::MouseFocusReason);
     if (event->button() == Qt::MiddleButton)
     {
         m_panning = true;
@@ -1653,6 +1937,7 @@ void RhiQmlItem::updateFreeCamera(float dtSeconds)
     QVector3D pos = m_cameraPosition;
     const QVector3D fwd = forwardVector();
     const QVector3D right = rightVector();
+    const QVector3D up(0.0f, 1.0f, 0.0f);
     const float speed = m_moveSpeed * dtSeconds;
 
     if (m_moveForward)
@@ -1663,6 +1948,10 @@ void RhiQmlItem::updateFreeCamera(float dtSeconds)
         pos -= right * speed;
     if (m_moveRight)
         pos += right * speed;
+    if (m_moveUp)
+        pos += up * speed;
+    if (m_moveDown)
+        pos -= up * speed;
 
     if (pos != m_cameraPosition)
     {
@@ -1858,6 +2147,41 @@ void RhiQmlItem::handlePick(QObject *item, bool hit, int modifiers)
     {
         setSelectedItem(nullptr);
     }
+}
+
+void RhiQmlItem::removeSelectedItems()
+{
+    const auto meshItems = findChildren<MeshItem *>(QString(), Qt::FindChildrenRecursively);
+    QVector<QObject *> toDelete;
+    toDelete.reserve(meshItems.size());
+    for (MeshItem *item : meshItems)
+    {
+        if (!item)
+            continue;
+        if (!item->isSelected())
+            continue;
+        toDelete.push_back(item);
+    }
+
+    if (toDelete.isEmpty())
+        return;
+
+    bool clearedSelection = false;
+    for (QObject *item : toDelete)
+    {
+        item->setProperty("isSelected", false);
+        m_selectableItems.remove(item);
+        if (item == m_selectedItem)
+        {
+            m_selectedItem = nullptr;
+            clearedSelection = true;
+        }
+        item->deleteLater();
+    }
+
+    if (clearedSelection)
+        emit selectedItemChanged();
+    update();
 }
 
 void RhiQmlItem::updateSelectableItems(const QVector<QObject *> &items)
