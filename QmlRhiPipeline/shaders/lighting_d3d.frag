@@ -240,7 +240,7 @@ void main()
     vec2 uvNdc = vUv;
     if (uFlip.flip.y > 0.5)
         uvNdc.y = 1.0 - uvNdc.y;
-    vec2 uvNdcRay = vec2(uvNdc.x, 1.0 - uvNdc.y);
+    vec2 uvNdcRay = uvNdc;
 
     vec3 baseColor = texture(gbuf0, uvSample).rgb;
     float metalness = texture(gbuf0, uvSample).a;

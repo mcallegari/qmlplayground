@@ -280,12 +280,6 @@ void PassLighting::execute(FrameContext &ctx)
     u->updateDynamicBuffer(m_shadowUbo, 0, sizeof(ShadowDataGpu), &shadowData);
     bool flipSampleY = !ctx.rhi->rhi()->isYUpInFramebuffer();
     bool flipNdcY = !ctx.rhi->rhi()->isYUpInNDC();
-    if (ctx.rhi->rhi()->backend() == QRhi::D3D11)
-    {
-        // D3D path already matches the default quad orientation for this pass.
-        flipSampleY = false;
-        flipNdcY = false;
-    }
     const QVector4D flipData(flipSampleY ? 1.0f : 0.0f,
                              flipNdcY ? 1.0f : 0.0f,
                              0.0f,
@@ -409,12 +403,6 @@ void PassLighting::execute(FrameContext &ctx)
             QMatrix4x4 viewProj = ctx.rhi->rhi()->clipSpaceCorrMatrix()
                     * ctx.scene->camera().projectionMatrix()
                     * ctx.scene->camera().viewMatrix();
-            if (ctx.rhi->rhi()->backend() == QRhi::D3D11)
-            {
-                QMatrix4x4 flipY;
-                flipY.scale(1.0f, -1.0f, 1.0f);
-                viewProj = flipY * viewProj;
-            }
             const quint32 mat4Size = 16 * sizeof(float);
             bool flipSampleY = !ctx.rhi->rhi()->isYUpInFramebuffer();
             const QVector4D depthParams(ctx.shadows ? ctx.shadows->shadowDepthParams.x() : 1.0f,
@@ -895,3 +883,4 @@ void PassLighting::ensureSelectionBoxesPipeline(FrameContext &ctx, QRhiRenderTar
     m_selectionPipeline = pipeline;
     m_selectionRpDesc = rt->renderPassDescriptor();
 }
+

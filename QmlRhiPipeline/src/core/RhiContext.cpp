@@ -43,6 +43,8 @@ void logRhiInfo(const QRhi *rhi)
                          .arg(QString::number(info.deviceId, 16));
     const int arraySizeMax = rhi->resourceLimit(QRhi::TextureArraySizeMax);
     qInfo() << "RHI TextureArraySizeMax:" << arraySizeMax;
+    qInfo() << "RHI Y-up framebuffer:" << rhi->isYUpInFramebuffer()
+            << "NDC:" << rhi->isYUpInNDC();
     if (arraySizeMax > 0 && arraySizeMax < kMaxSpotShadows)
     {
         qWarning() << "RHI TextureArraySizeMax is below kMaxSpotShadows:"
