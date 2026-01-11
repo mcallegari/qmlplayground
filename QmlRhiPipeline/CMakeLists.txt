@@ -17,12 +17,14 @@ add_executable(qmlrhipipeline
     src/core/ShaderManager.cpp
     src/qml/CameraItem.cpp
     src/qml/CubeItem.cpp
+    src/qml/BeamBarItem.cpp
     src/qml/HazerItem.cpp
     src/qml/LightItem.cpp
     src/qml/MeshItem.cpp
     src/qml/MeshUtils.cpp
     src/qml/MovingHeadItem.cpp
     src/qml/ModelItem.cpp
+    src/qml/PixelBarItem.cpp
     src/qml/PickingUtils.cpp
     src/qml/RhiQmlItem.cpp
     src/qml/SphereItem.cpp

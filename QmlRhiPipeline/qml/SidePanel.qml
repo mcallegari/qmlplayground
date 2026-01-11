@@ -11,6 +11,7 @@ Rectangle {
     property var selectedItem
     property vector3d spawnPosition: Qt.vector3d(0, 0, 0)
     property string modelPath: ""
+    property int emitterCountToAdd: 1
     property bool expanded: true
 
     color: "#151515"
@@ -33,6 +34,10 @@ Rectangle {
             return "MovingHeadLight"
         if (hasProp(obj, "zoom"))
             return "StaticLight"
+        if (hasProp(obj, "emitterCount") && hasProp(obj, "beamRadius"))
+            return "BeamBar"
+        if (hasProp(obj, "emitterCount") && hasProp(obj, "emissiveColor"))
+            return "PixelBar"
         if (hasProp(obj, "coneAngle"))
             return "Light"
         if (hasProp(obj, "path"))
@@ -40,7 +45,7 @@ Rectangle {
         return "Mesh"
     }
 
-    function addItem(kind, explicitPath) {
+    function addItem(kind, explicitPath, explicitEmitterCount) {
         if (!renderer)
             return
         var typeName = kind
@@ -51,6 +56,9 @@ Rectangle {
             if (path && path.length > 0)
                 obj.path = path
         }
+        var count = explicitEmitterCount !== undefined ? explicitEmitterCount : panel.emitterCountToAdd
+        if (count && count > 0 && hasProp(obj, "emitterCount"))
+            obj.emitterCount = count
         obj.position = spawnPosition
         if (typeName === "StaticLight")
             obj.rotationDegrees = Qt.vector3d(0, 0, 0)
@@ -258,7 +266,7 @@ Rectangle {
                 ComboBox {
                     id: addTypeCombo
                     Layout.fillWidth: true
-                    model: ["Model", "StaticLight", "MovingHeadLight", "Light", "Cube", "Sphere"]
+                    model: ["Model", "StaticLight", "MovingHeadLight", "Light", "Cube", "Sphere", "PixelBar", "BeamBar"]
                     currentIndex: 0
                 }
 
@@ -267,6 +275,8 @@ Rectangle {
                     onClicked: {
                         if (addTypeCombo.currentText === "Model")
                             modelDialog.open()
+                        else if (addTypeCombo.currentText === "PixelBar" || addTypeCombo.currentText === "BeamBar")
+                            panel.addItem(addTypeCombo.currentText, "", panel.emitterCountToAdd)
                         else
                             panel.addItem(addTypeCombo.currentText)
                     }
@@ -285,6 +295,22 @@ Rectangle {
                 visible: addTypeCombo.currentText === "Model"
                 text: panel.modelPath
                 onTextEdited: panel.modelPath = text
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 6
+                visible: addTypeCombo.currentText === "PixelBar" || addTypeCombo.currentText === "BeamBar"
+                Text { text: "Emitters"; color: "#9a9a9a"; Layout.preferredWidth: 70 }
+                SpinBox {
+                    Layout.fillWidth: true
+                    from: 1
+                    to: 256
+                    value: panel.emitterCountToAdd
+                    onValueChanged: {
+                        panel.emitterCountToAdd = value
+                    }
+                }
             }
 
             Rectangle { height: 1; color: "#2a2a2a"; Layout.fillWidth: true }
@@ -355,11 +381,44 @@ Rectangle {
                         }
                     }
                 }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: hasProp(panel.selectedItem, "emitterCount")
+                    Text { text: "Emitters"; color: "#9a9a9a"; Layout.preferredWidth: 70 }
+                    SpinBox {
+                        Layout.fillWidth: true
+                        from: 1
+                        to: 256
+                        value: hasProp(panel.selectedItem, "emitterCount") ? panel.selectedItem.emitterCount : 0
+                        onValueChanged: function() {
+                            if (panel.selectedItem && panel.selectedItem.emitterCount !== value)
+                                panel.selectedItem.emitterCount = value
+                        }
+                    }
+                }
             }
 
             ColumnLayout {
                 Layout.fillWidth: true
                 spacing: 6
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: hasProp(panel.selectedItem, "baseColor")
+                    Text { text: "Base"; color: "#9a9a9a"; Layout.preferredWidth: 70 }
+                    Vec3Editor {
+                        Layout.fillWidth: true
+                        value: hasProp(panel.selectedItem, "baseColor") ? panel.selectedItem.baseColor : Qt.vector3d(0.5, 0.5, 0.5)
+                        minValue: 0.0
+                        maxValue: 10.0
+                        stepValue: 0.05
+                        onValueEdited: function(v) {
+                            if (panel.selectedItem)
+                                panel.selectedItem.baseColor = v
+                        }
+                    }
+                }
 
                 RowLayout {
                     Layout.fillWidth: true
@@ -374,6 +433,23 @@ Rectangle {
                         onValueEdited: function(v) {
                             if (panel.selectedItem)
                                 panel.selectedItem.color = v
+                        }
+                    }
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: hasProp(panel.selectedItem, "emissiveColor")
+                    Text { text: "Emissive"; color: "#9a9a9a"; Layout.preferredWidth: 70 }
+                    Vec3Editor {
+                        Layout.fillWidth: true
+                        value: hasProp(panel.selectedItem, "emissiveColor") ? panel.selectedItem.emissiveColor : Qt.vector3d(0.0, 0.0, 0.0)
+                        minValue: 0.0
+                        maxValue: 20.0
+                        stepValue: 0.05
+                        onValueEdited: function(v) {
+                            if (panel.selectedItem)
+                                panel.selectedItem.emissiveColor = v
                         }
                     }
                 }

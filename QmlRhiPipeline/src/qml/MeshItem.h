@@ -20,7 +20,9 @@ public:
         StaticLight,
         MovingHead,
         Cube,
-        Sphere
+        Sphere,
+        PixelBar,
+        BeamBar
     };
     Q_ENUM(MeshType)
 

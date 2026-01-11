@@ -29,6 +29,8 @@
 #include "qml/MovingHeadItem.h"
 #include "qml/CubeItem.h"
 #include "qml/SphereItem.h"
+#include "qml/PixelBarItem.h"
+#include "qml/BeamBarItem.h"
 #include "qml/MeshItem.h"
 #include "qml/MeshUtils.h"
 #include "qml/PickingUtils.h"
@@ -58,6 +60,14 @@ struct MeshRecord
     float roughness = 0.5f;
     float pan = 0.0f;
     float tilt = 0.0f;
+    int emitterCount = 0;
+    QVector3D lightColor = QVector3D(1.0f, 1.0f, 1.0f);
+    float intensity = 1.0f;
+    float range = 20.0f;
+    float beamRadius = 0.2f;
+    bool castShadows = false;
+    QVector<QVector3D> emitterColors;
+    QVector<float> emitterIntensities;
     bool selected = false;
     bool selectable = true;
     bool visible = true;
@@ -293,6 +303,15 @@ static TransformInfo transformFromRecord(const RecordT &record)
     return makeTransform(record.position, record.rotationDegrees, record.scale);
 }
 
+static QMatrix4x4 makeBasisMatrix(const QVector3D &position, const QVector3D &rotationDegrees)
+{
+    QMatrix4x4 mat;
+    mat.translate(position);
+    if (!rotationDegrees.isNull())
+        mat.rotate(QQuaternion::fromEulerAngles(rotationDegrees));
+    return mat;
+}
+
 template <typename RecordT, typename ItemT>
 static void initCommonRecord(RecordT &record, const ItemT *item)
 {
@@ -315,6 +334,103 @@ static TransformInfo applyCommonRecordTransforms(RecordT &record,
                              record.selected, record.selectable, record.visible);
     applySelectionGroup(meshes, record.firstMesh, record.meshCount, record.firstMesh);
     return transform;
+}
+
+static bool syncCommonFields(MeshRecord &record, const MeshItem *item)
+{
+    bool changed = false;
+    if (record.position != item->position())
+    {
+        record.position = item->position();
+        changed = true;
+    }
+    if (record.rotationDegrees != item->rotationDegrees())
+    {
+        record.rotationDegrees = item->rotationDegrees();
+        changed = true;
+    }
+    if (record.scale != item->scale())
+    {
+        record.scale = item->scale();
+        changed = true;
+    }
+    return changed;
+}
+
+static void applyPixelBarLayout(MeshRecord &record, QVector<Mesh> &meshes)
+{
+    if (record.meshCount <= 0)
+        return;
+
+    const int availableEmitters = qMax(0, record.meshCount - 1);
+    const int emitterCount = qBound(0, record.emitterCount, availableEmitters);
+    if (record.emitterCount != emitterCount)
+        record.emitterCount = emitterCount;
+
+    QMatrix4x4 base = makeBasisMatrix(record.position, record.rotationDegrees);
+    const float length = qMax(0.001f, 0.1f * float(qMax(1, emitterCount)) * record.scale.x());
+    const float height = qMax(0.001f, 0.1f * record.scale.y());
+    const float depth = qMax(0.001f, 0.1f * record.scale.z());
+
+    Mesh &body = meshes[record.firstMesh];
+    QMatrix4x4 bodyLocal;
+    bodyLocal.scale(length, height, depth);
+    body.modelMatrix = base * bodyLocal;
+    body.userOffset = record.position;
+    body.material.baseColor = record.baseColor;
+    body.material.emissive = QVector3D(0.0f, 0.0f, 0.0f);
+
+    const float segment = emitterCount > 0 ? (length / emitterCount) : length;
+    const float emitterX = segment * 0.8f;
+    const float emitterY = height * 0.8f;
+    const float emitterZ = qMax(0.001f, 0.01f * record.scale.z());
+    const float start = -length * 0.5f + segment * 0.5f;
+
+    const float frontOffset = (depth * 0.5f) + (emitterZ * 0.5f);
+    for (int i = 0; i < emitterCount; ++i)
+    {
+        const QVector3D color = (i < record.emitterColors.size()) ? record.emitterColors[i] : record.emissiveColor;
+        const float intensity = (i < record.emitterIntensities.size()) ? record.emitterIntensities[i] : 1.0f;
+        const QVector3D emissive = color * intensity;
+        Mesh &mesh = meshes[record.firstMesh + 1 + i];
+        QMatrix4x4 local;
+        local.translate(start + i * segment, 0.0f, frontOffset);
+        local.scale(emitterX, emitterY, emitterZ);
+        mesh.modelMatrix = base * local;
+        mesh.userOffset = record.position;
+        mesh.material.baseColor = color;
+        mesh.material.emissive = emissive;
+    }
+
+    for (int i = record.firstMesh + 1 + emitterCount; i < record.firstMesh + record.meshCount; ++i)
+    {
+        Mesh &mesh = meshes[i];
+        QMatrix4x4 hidden;
+        hidden.setToIdentity();
+        hidden.scale(0.0f);
+        mesh.modelMatrix = hidden;
+        mesh.userOffset = record.position;
+        mesh.visible = false;
+        mesh.selectable = false;
+        mesh.selected = false;
+    }
+}
+
+static void applyBeamBarBody(MeshRecord &record, QVector<Mesh> &meshes)
+{
+    if (record.meshCount <= 0)
+        return;
+    QMatrix4x4 base = makeBasisMatrix(record.position, record.rotationDegrees);
+    const float length = qMax(0.001f, 0.1f * float(qMax(1, record.emitterCount)) * record.scale.x());
+    const float height = qMax(0.001f, 0.1f * record.scale.y());
+    const float depth = qMax(0.001f, 0.1f * record.scale.z());
+    Mesh &body = meshes[record.firstMesh];
+    QMatrix4x4 bodyLocal;
+    bodyLocal.scale(length, height, depth);
+    body.modelMatrix = base * bodyLocal;
+    body.userOffset = record.position;
+    body.material.baseColor = record.baseColor;
+    body.material.emissive = QVector3D(0.0f, 0.0f, 0.0f);
 }
 
 template <typename RecordT>
@@ -458,6 +574,7 @@ public:
         QHash<const StaticLightItem *, LightTransform> staticLightItemTransforms;
         QHash<const StaticLightItem *, QVector<EmitterData>> staticLightEmitters;
         QHash<const MovingHeadItem *, QVector<EmitterData>> movingHeadEmitters;
+        QHash<const BeamBarItem *, QVector<Light>> beamBarLights;
 
         QVector<RhiQmlItem::PendingModel> models;
         QVector<QObject *> selectableItems;
@@ -663,6 +780,62 @@ public:
                     }
                     syncSelectionVisibilityFromItem(*record, meshItem, m_scene.meshes());
                 }
+                else if (type == MeshItem::MeshType::PixelBar)
+                {
+                    const PixelBarItem *pixelBar = static_cast<const PixelBarItem *>(meshItem);
+                    const int nextCount = qMax(1, pixelBar->emitterCount());
+                    record->emitterCount = record->meshCount > 0
+                            ? qMin(nextCount, record->meshCount - 1)
+                            : 1;
+                    record->baseColor = pixelBar->baseColor();
+                    record->emissiveColor = pixelBar->emissiveColor();
+                    record->emitterColors = pixelBar->emitterColorsVector();
+                    record->emitterIntensities = pixelBar->emitterIntensitiesVector();
+                    syncCommonFields(*record, meshItem);
+                    syncSelectionVisibilityFromItem(*record, meshItem, m_scene.meshes());
+                    applyPixelBarLayout(*record, m_scene.meshes());
+                }
+                else if (type == MeshItem::MeshType::BeamBar)
+                {
+                    const BeamBarItem *beamBar = static_cast<const BeamBarItem *>(meshItem);
+                    record->emitterCount = qMax(1, beamBar->emitterCount());
+                    record->baseColor = beamBar->baseColor();
+                    record->lightColor = beamBar->color();
+                    record->intensity = beamBar->intensity();
+                    record->range = beamBar->range();
+                    record->beamRadius = beamBar->beamRadius();
+                    record->castShadows = beamBar->castShadows();
+                    record->emitterColors = beamBar->emitterColorsVector();
+                    record->emitterIntensities = beamBar->emitterIntensitiesVector();
+                    syncCommonFields(*record, meshItem);
+                    syncSelectionVisibilityFromItem(*record, meshItem, m_scene.meshes());
+                    applyBeamBarBody(*record, m_scene.meshes());
+
+                    QVector<Light> lights;
+                    lights.reserve(record->emitterCount);
+                    const QMatrix4x4 base = makeBasisMatrix(record->position, record->rotationDegrees);
+                    const QQuaternion rot = QQuaternion::fromEulerAngles(record->rotationDegrees);
+                    const float length = qMax(0.001f, 0.1f * float(qMax(1, record->emitterCount)) * record->scale.x());
+                    const float segment = record->emitterCount > 0 ? (length / record->emitterCount) : length;
+                    const float start = -length * 0.5f + segment * 0.5f;
+                    for (int i = 0; i < record->emitterCount; ++i)
+                    {
+                        const QVector3D localPos(start + i * segment, 0.0f, 0.0f);
+                        Light light = beamBar->toLight();
+                        const QVector3D color = (i < record->emitterColors.size()) ? record->emitterColors[i] : record->lightColor;
+                        const float intensity = (i < record->emitterIntensities.size()) ? record->emitterIntensities[i] : record->intensity;
+                        const QVector3D worldPos = (base * QVector4D(localPos, 1.0f)).toVector3D();
+                        light.position = worldPos;
+                        light.direction = rot.rotatedVector(QVector3D(0.0f, -1.0f, 0.0f)).normalized();
+                        light.color = color;
+                        light.intensity = intensity;
+                        light.range = record->range;
+                        light.beamRadius = record->beamRadius;
+                        light.castShadows = record->castShadows;
+                        lights.push_back(light);
+                    }
+                    beamBarLights.insert(beamBar, lights);
+                }
                 continue;
             }
 
@@ -693,6 +866,19 @@ public:
             else if (type == MeshItem::MeshType::Sphere)
             {
                 m_scene.meshes().push_back(createSphereMesh());
+                created = true;
+            }
+            else if (type == MeshItem::MeshType::PixelBar)
+            {
+                const PixelBarItem *pixelBar = static_cast<const PixelBarItem *>(meshItem);
+                const int emitters = qMax(0, pixelBar->emitterCount());
+                for (int i = 0; i < emitters + 1; ++i)
+                    m_scene.meshes().push_back(createUnitCubeMesh());
+                created = true;
+            }
+            else if (type == MeshItem::MeshType::BeamBar)
+            {
+                m_scene.meshes().push_back(createUnitCubeMesh());
                 created = true;
             }
 
@@ -735,7 +921,13 @@ public:
             }
             else
             {
-                const TransformInfo transform = applyCommonRecordTransforms(newRecord, m_scene.meshes(), true);
+                TransformInfo transform;
+                const bool useCommonTransform = (type == MeshItem::MeshType::Model
+                                                 || type == MeshItem::MeshType::StaticLight
+                                                 || type == MeshItem::MeshType::Cube
+                                                 || type == MeshItem::MeshType::Sphere);
+                if (useCommonTransform)
+                    transform = applyCommonRecordTransforms(newRecord, m_scene.meshes(), true);
                 if (type == MeshItem::MeshType::StaticLight)
                 {
                     const StaticLightItem *staticLight = static_cast<const StaticLightItem *>(meshItem);
@@ -768,6 +960,58 @@ public:
                     applyMaterial(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount,
                                   newRecord.baseColor, newRecord.emissiveColor,
                                   newRecord.metalness, newRecord.roughness);
+                }
+                else if (type == MeshItem::MeshType::PixelBar)
+                {
+                    const PixelBarItem *pixelBar = static_cast<const PixelBarItem *>(meshItem);
+                    newRecord.emitterCount = qMax(1, pixelBar->emitterCount());
+                    newRecord.baseColor = pixelBar->baseColor();
+                    newRecord.emissiveColor = pixelBar->emissiveColor();
+                    newRecord.emitterColors = pixelBar->emitterColorsVector();
+                    newRecord.emitterIntensities = pixelBar->emitterIntensitiesVector();
+                    applyPixelBarLayout(newRecord, m_scene.meshes());
+                    applySelectionVisibility(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount,
+                                             newRecord.selected, newRecord.selectable, newRecord.visible);
+                    applySelectionGroup(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount, newRecord.firstMesh);
+                }
+                else if (type == MeshItem::MeshType::BeamBar)
+                {
+                    const BeamBarItem *beamBar = static_cast<const BeamBarItem *>(meshItem);
+                    newRecord.emitterCount = qMax(1, beamBar->emitterCount());
+                    newRecord.baseColor = beamBar->baseColor();
+                    newRecord.lightColor = beamBar->color();
+                    newRecord.intensity = beamBar->intensity();
+                    newRecord.range = beamBar->range();
+                    newRecord.beamRadius = beamBar->beamRadius();
+                    newRecord.castShadows = beamBar->castShadows();
+                    newRecord.emitterColors = beamBar->emitterColorsVector();
+                    newRecord.emitterIntensities = beamBar->emitterIntensitiesVector();
+                    applyBeamBarBody(newRecord, m_scene.meshes());
+                    applySelectionVisibility(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount,
+                                             newRecord.selected, newRecord.selectable, newRecord.visible);
+                    applySelectionGroup(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount, newRecord.firstMesh);
+
+                    QVector<Light> lights;
+                    lights.reserve(newRecord.emitterCount);
+                    const QMatrix4x4 base = makeBasisMatrix(newRecord.position, newRecord.rotationDegrees);
+                    const QQuaternion rot = QQuaternion::fromEulerAngles(newRecord.rotationDegrees);
+                    const float length = qMax(0.001f, 0.1f * float(qMax(1, newRecord.emitterCount)) * newRecord.scale.x());
+                    const float segment = newRecord.emitterCount > 0 ? (length / newRecord.emitterCount) : length;
+                    const float start = -length * 0.5f + segment * 0.5f;
+                    for (int i = 0; i < newRecord.emitterCount; ++i)
+                    {
+                        const QVector3D localPos(start + i * segment, 0.0f, 0.0f);
+                        Light light = beamBar->toLight();
+                        const QVector3D color = (i < newRecord.emitterColors.size()) ? newRecord.emitterColors[i] : newRecord.lightColor;
+                        const float intensity = (i < newRecord.emitterIntensities.size()) ? newRecord.emitterIntensities[i] : newRecord.intensity;
+                        const QVector3D worldPos = (base * QVector4D(localPos, 1.0f)).toVector3D();
+                        light.position = worldPos;
+                        light.direction = rot.rotatedVector(QVector3D(0.0f, -1.0f, 0.0f)).normalized();
+                        light.color = color;
+                        light.intensity = intensity;
+                        lights.push_back(light);
+                    }
+                    beamBarLights.insert(beamBar, lights);
                 }
             }
 
@@ -821,6 +1065,12 @@ public:
                     light.beamRadius = emitter.diameter * 0.5f;
                 m_scene.lights().push_back(light);
             }
+        }
+        for (auto it = beamBarLights.cbegin(); it != beamBarLights.cend(); ++it)
+        {
+            const QVector<Light> lights = it.value();
+            for (const Light &light : lights)
+                m_scene.lights().push_back(light);
         }
         const auto qmlLights = qmlItem->findChildren<LightItem *>(QString(), Qt::FindChildrenRecursively);
         for (const LightItem *lightItem : qmlLights)

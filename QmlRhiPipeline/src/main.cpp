@@ -11,10 +11,12 @@
 #include "qml/MovingHeadItem.h"
 #include "qml/ModelItem.h"
 #include "qml/CubeItem.h"
+#include "qml/BeamBarItem.h"
 #include "qml/SphereItem.h"
 #include "qml/StaticLightItem.h"
 #include "qml/HazerItem.h"
 #include "qml/RhiQmlItem.h"
+#include "qml/PixelBarItem.h"
 
 #define RHIPIPELINE_CPP_SCENE_DEMO 0
 
@@ -32,6 +34,8 @@ int main(int argc, char **argv)
     qmlRegisterType<CubeItem>("RhiQmlItem", 1, 0, "Cube");
     qmlRegisterType<SphereItem>("RhiQmlItem", 1, 0, "Sphere");
     qmlRegisterType<StaticLightItem>("RhiQmlItem", 1, 0, "StaticLight");
+    qmlRegisterType<PixelBarItem>("RhiQmlItem", 1, 0, "PixelBar");
+    qmlRegisterType<BeamBarItem>("RhiQmlItem", 1, 0, "BeamBar");
 
     QQmlApplicationEngine engine;
     QUrl url(QStringLiteral("qrc:/qml/Main.qml"));

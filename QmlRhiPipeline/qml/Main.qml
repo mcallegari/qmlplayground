@@ -177,20 +177,20 @@ Window {
             nearPlane: 0.01
             farPlane: 300
         }
-/*
+
         Light {
             type: Light.Ambient
             color: Qt.vector3d(0.5, 0.5, 0.5)
             intensity: 1.0
             castShadows: false
         }
-*/
+
         Light {
             type: Light.Directional
-            direction: Qt.vector3d(0, -1.0, 0)
+            direction: Qt.vector3d(0, -1.0, 0.3)
             color: Qt.vector3d(1.0, 1.0, 1.0)
-            intensity: 2.0
-            castShadows: false
+            intensity: 1.0
+            castShadows: true
         }
 /*
         Light {
@@ -212,7 +212,7 @@ Window {
             color: Qt.vector3d(0.1, 0.1, 0.8)
             intensity: 5.0
             range: 100.0
-            coneAngle: 25.0
+            coneAngle: 20.0
             qualitySteps: 40
             castShadows: true
             beamShape: Light.ConeShape
@@ -272,6 +272,7 @@ Window {
             //goboPath: "gobos/open.svg"
         }
 */
+/*
         Instantiator {
             model: 12
             delegate: Cube {
@@ -283,6 +284,7 @@ Window {
                 emissiveColor: root.scaleColor(ledColor, 3.0)
             }
         }
+*/
 /*
         Cube {
             id: mainCube
