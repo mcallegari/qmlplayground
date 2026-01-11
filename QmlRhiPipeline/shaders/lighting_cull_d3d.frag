@@ -127,7 +127,7 @@ vec2 shadowUvSpot(vec2 uv)
 float sampleSpotShadowDepth(vec2 uv, int slot)
 {
     int clamped = clamp(slot, 0, MAX_SPOT_SHADOWS - 1);
-    return texture(spotShadowMap, vec3(uv, float(clamped))).r;
+    return textureLod(spotShadowMap, vec3(uv, float(clamped)), 0.0).r;
 }
 
 float sampleSpotShadowDepthLod(vec2 uv, int slot, float lod)
@@ -164,11 +164,11 @@ float sampleShadowMap(int idx, vec3 worldPos, float bias)
 
     float shadowDepth;
     if (idx == 0)
-        shadowDepth = texture(shadowMap0, uv).r;
+        shadowDepth = textureLod(shadowMap0, uv, 0.0).r;
     else if (idx == 1)
-        shadowDepth = texture(shadowMap1, uv).r;
+        shadowDepth = textureLod(shadowMap1, uv, 0.0).r;
     else
-        shadowDepth = texture(shadowMap2, uv).r;
+        shadowDepth = textureLod(shadowMap2, uv, 0.0).r;
 
     if (uShadow.shadowDepthParams.z > 0.5)
         return depth + bias >= shadowDepth ? 1.0 : 0.0;
@@ -250,20 +250,22 @@ void main()
     if (uFlip.flip.y > 0.5)
         uvNdc.y = 1.0 - uvNdc.y;
 
-    vec3 baseColor = texture(gbuf0, uvSample).rgb;
-    float metalness = texture(gbuf0, uvSample).a;
+    vec4 g0 = textureLod(gbuf0, uvSample, 0.0);
+    vec3 baseColor = g0.rgb;
+    float metalness = g0.a;
     vec3 emissive = vec3(0.0);
 
-    vec3 N = decodeNormal(texture(gbuf1, uvSample).rgb);
-    float roughness = texture(gbuf1, uvSample).a;
+    vec4 g1 = textureLod(gbuf1, uvSample, 0.0);
+    vec3 N = decodeNormal(g1.rgb);
+    float roughness = g1.a;
 
-    float depthSample = texture(gbufDepth, uvSample).r;
+    float depthSample = textureLod(gbufDepth, uvSample, 0.0).r;
     vec3 worldPos;
     if (uShadow.shadowDepthParams.w > 0.5)
-        worldPos = texture(gbuf2, uvSample).rgb;
+        worldPos = textureLod(gbuf2, uvSample, 0.0).rgb;
     else
         worldPos = reconstructWorldPosWithDepth(uvNdc, depthSample);
-    float occlusion = texture(gbuf2, uvSample).a;
+    float occlusion = textureLod(gbuf2, uvSample, 0.0).a;
 
     vec3 V = normalize(uCamera.cameraPos.xyz - worldPos);
 
@@ -423,7 +425,7 @@ void main()
         vec3 hitPos = uCamera.cameraPos.xyz;
         if (hasHit) {
             if (uShadow.shadowDepthParams.w > 0.5)
-                hitPos = texture(gbuf2, uvSample).rgb;
+                hitPos = textureLod(gbuf2, uvSample, 0.0).rgb;
             else
                 hitPos = reconstructWorldPosWithDepth(uvNdc, depthSample);
             vec3 toHit = hitPos - uCamera.cameraPos.xyz;

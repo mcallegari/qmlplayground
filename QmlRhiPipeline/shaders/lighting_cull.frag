@@ -12,7 +12,7 @@ layout(binding = 1) uniform sampler2D gbuf1;
 layout(binding = 2) uniform sampler2D gbuf2;
 layout(binding = 20) uniform sampler2D gbufEmissive;
 
-layout(std140, binding = 3) uniform LightsUbo {
+layout(std430, binding = 3) readonly buffer LightsBuffer {
     vec4 lightCount;
     vec4 lightParams;
     vec4 lightFlags;
@@ -29,7 +29,7 @@ layout(std140, binding = 4) uniform CameraUbo {
     vec4 cameraPos;
 } uCamera;
 
-layout(std140, binding = 5) uniform ShadowUbo {
+layout(std430, binding = 5) readonly buffer ShadowBuffer {
     mat4 lightViewProj[3];
     vec4 splits;
     vec4 dirLightDir;

@@ -153,7 +153,7 @@ void PassLightCulling::execute(FrameContext &ctx)
     params.flags = QVector4D(1.0f, 0.0f, 0.0f, 0.0f);
 
     QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
-    u->updateDynamicBuffer(m_lightUbo, 0, sizeof(LightsData), &lightData);
+    u->uploadStaticBuffer(m_lightUbo, 0, sizeof(LightsData), &lightData);
     u->updateDynamicBuffer(m_cullUbo, 0, sizeof(CullParams), &params);
     cb->resourceUpdate(u);
 
@@ -193,7 +193,7 @@ void PassLightCulling::ensurePipeline(FrameContext &ctx)
 
     if (!m_lightUbo)
     {
-        m_lightUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(LightsData));
+        m_lightUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Static, QRhiBuffer::StorageBuffer, sizeof(LightsData));
         if (!m_lightUbo->create())
         {
             delete m_lightUbo;
@@ -214,7 +214,7 @@ void PassLightCulling::ensurePipeline(FrameContext &ctx)
 
     m_srb = ctx.rhi->rhi()->newShaderResourceBindings();
     m_srb->setBindings({
-        QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::ComputeStage, m_lightUbo),
+        QRhiShaderResourceBinding::bufferLoad(0, QRhiShaderResourceBinding::ComputeStage, m_lightUbo),
         QRhiShaderResourceBinding::uniformBuffer(1, QRhiShaderResourceBinding::ComputeStage, m_cullUbo),
         QRhiShaderResourceBinding::imageStore(2, QRhiShaderResourceBinding::ComputeStage, m_lightIndexTexture, 0)
     });

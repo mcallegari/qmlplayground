@@ -273,11 +273,21 @@ void PassLighting::execute(FrameContext &ctx)
 
     QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
     if (m_lightsUbo)
-        u->updateDynamicBuffer(m_lightsUbo, 0, sizeof(LightsData), &lightData);
+    {
+        if (ctx.rhi->rhi()->backend() == QRhi::D3D11)
+            u->updateDynamicBuffer(m_lightsUbo, 0, sizeof(LightsData), &lightData);
+        else
+            u->uploadStaticBuffer(m_lightsUbo, 0, sizeof(LightsData), &lightData);
+    }
     if (m_cameraUbo)
         u->updateDynamicBuffer(m_cameraUbo, 0, sizeof(CameraData), &camData);
     if (m_shadowUbo)
-    u->updateDynamicBuffer(m_shadowUbo, 0, sizeof(ShadowDataGpu), &shadowData);
+    {
+        if (ctx.rhi->rhi()->backend() == QRhi::D3D11)
+            u->updateDynamicBuffer(m_shadowUbo, 0, sizeof(ShadowDataGpu), &shadowData);
+        else
+            u->uploadStaticBuffer(m_shadowUbo, 0, sizeof(ShadowDataGpu), &shadowData);
+    }
     bool flipSampleY = !ctx.rhi->rhi()->isYUpInFramebuffer();
     bool flipNdcY = !ctx.rhi->rhi()->isYUpInNDC();
     const QVector4D flipData(flipSampleY ? 1.0f : 0.0f,
@@ -562,74 +572,41 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     m_reverseZ = reverseZ;
     m_useLightCulling = effectiveLightCulling;
 
-    if (metal)
+    struct LightsDataSize
     {
-        struct LightsDataSize
-        {
-            QVector4D lightCount;
-            QVector4D lightParams;
-            QVector4D lightFlags;
-            QVector4D lightBeam[kMaxLights];
-            QVector4D posRange[kMaxLights];
-            QVector4D colorIntensity[kMaxLights];
-            QVector4D dirInner[kMaxLights];
-            QVector4D other[kMaxLights];
-        };
-        m_lightsUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(LightsDataSize));
-        struct CameraDataSize
-        {
-            float view[16];
-            float invViewProj[16];
-            QVector4D cameraPos;
-        };
-        m_cameraUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer,
-                                                sizeof(CameraDataSize));
-        struct ShadowDataGpu
-        {
-            float lightViewProj[3][16];
-            float splits[4];
-            float dirLightDir[4];
-            float dirLightColorIntensity[4];
-            float spotLightViewProj[kMaxLights][16];
-            float spotShadowParams[kMaxLights][4];
-            float shadowDepthParams[4];
-        };
-        m_shadowUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(ShadowDataGpu));
-    }
-    else
+        QVector4D lightCount;
+        QVector4D lightParams;
+        QVector4D lightFlags;
+        QVector4D lightBeam[kMaxLights];
+        QVector4D posRange[kMaxLights];
+        QVector4D colorIntensity[kMaxLights];
+        QVector4D dirInner[kMaxLights];
+        QVector4D other[kMaxLights];
+    };
+    m_lightsUbo = ctx.rhi->rhi()->newBuffer(d3d11 ? QRhiBuffer::Dynamic : QRhiBuffer::Static,
+                                            d3d11 ? QRhiBuffer::UniformBuffer : QRhiBuffer::StorageBuffer,
+                                            sizeof(LightsDataSize));
+    struct CameraDataSize
     {
-        struct LightsDataSize
-        {
-            QVector4D lightCount;
-            QVector4D lightParams;
-            QVector4D lightFlags;
-            QVector4D lightBeam[kMaxLights];
-            QVector4D posRange[kMaxLights];
-            QVector4D colorIntensity[kMaxLights];
-            QVector4D dirInner[kMaxLights];
-            QVector4D other[kMaxLights];
-        };
-        m_lightsUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(LightsDataSize));
-        struct CameraDataSize
-        {
-            float view[16];
-            float invViewProj[16];
-            QVector4D cameraPos;
-        };
-        m_cameraUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer,
-                                                sizeof(CameraDataSize));
-        struct ShadowDataGpu
-        {
-            float lightViewProj[3][16];
-            float splits[4];
-            float dirLightDir[4];
-            float dirLightColorIntensity[4];
-            float spotLightViewProj[kMaxLights][16];
-            float spotShadowParams[kMaxLights][4];
-            float shadowDepthParams[4];
-        };
-        m_shadowUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(ShadowDataGpu));
-    }
+        float view[16];
+        float invViewProj[16];
+        QVector4D cameraPos;
+    };
+    m_cameraUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer,
+                                            sizeof(CameraDataSize));
+    struct ShadowDataGpu
+    {
+        float lightViewProj[3][16];
+        float splits[4];
+        float dirLightDir[4];
+        float dirLightColorIntensity[4];
+        float spotLightViewProj[kMaxLights][16];
+        float spotShadowParams[kMaxLights][4];
+        float shadowDepthParams[4];
+    };
+    m_shadowUbo = ctx.rhi->rhi()->newBuffer(d3d11 ? QRhiBuffer::Dynamic : QRhiBuffer::Static,
+                                            d3d11 ? QRhiBuffer::UniformBuffer : QRhiBuffer::StorageBuffer,
+                                            sizeof(ShadowDataGpu));
     m_flipUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D));
     if (m_useLightCulling)
     {
@@ -653,16 +630,8 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     }
     if (!m_flipUbo->create())
         return;
-    if (metal)
-    {
-        if (!m_lightsUbo->create() || !m_cameraUbo->create() || !m_shadowUbo->create())
-            return;
-    }
-    else
-    {
-        if (!m_lightsUbo->create() || !m_cameraUbo->create() || !m_shadowUbo->create())
-            return;
-    }
+    if (!m_lightsUbo->create() || !m_cameraUbo->create() || !m_shadowUbo->create())
+        return;
 
     if (!gbuf.color0 || !gbuf.color1 || !gbuf.color2 || !gbuf.color3)
     {
@@ -695,9 +664,9 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
             QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, gbuf.color1, m_sampler),
             QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage, gbuf.color2, m_sampler),
             QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage, gbuf.depth, m_sampler),
-            QRhiShaderResourceBinding::uniformBuffer(6, QRhiShaderResourceBinding::FragmentStage, m_lightsUbo),
+            QRhiShaderResourceBinding::bufferLoad(6, QRhiShaderResourceBinding::FragmentStage, m_lightsUbo),
             QRhiShaderResourceBinding::uniformBuffer(7, QRhiShaderResourceBinding::FragmentStage, m_cameraUbo),
-            QRhiShaderResourceBinding::uniformBuffer(8, QRhiShaderResourceBinding::FragmentStage, m_shadowUbo)
+            QRhiShaderResourceBinding::bufferLoad(8, QRhiShaderResourceBinding::FragmentStage, m_shadowUbo)
         };
         if (m_useLightCulling)
         {
@@ -740,9 +709,9 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
             QRhiShaderResourceBinding::sampledTexture(1, QRhiShaderResourceBinding::FragmentStage, gbuf.color1, m_sampler),
             QRhiShaderResourceBinding::sampledTexture(2, QRhiShaderResourceBinding::FragmentStage, gbuf.color2, m_sampler),
             QRhiShaderResourceBinding::sampledTexture(20, QRhiShaderResourceBinding::FragmentStage, gbuf.color3, m_sampler),
-            QRhiShaderResourceBinding::uniformBuffer(3, QRhiShaderResourceBinding::FragmentStage, m_lightsUbo),
+            QRhiShaderResourceBinding::bufferLoad(3, QRhiShaderResourceBinding::FragmentStage, m_lightsUbo),
             QRhiShaderResourceBinding::uniformBuffer(4, QRhiShaderResourceBinding::FragmentStage, m_cameraUbo),
-            QRhiShaderResourceBinding::uniformBuffer(5, QRhiShaderResourceBinding::FragmentStage, m_shadowUbo),
+            QRhiShaderResourceBinding::bufferLoad(5, QRhiShaderResourceBinding::FragmentStage, m_shadowUbo),
             QRhiShaderResourceBinding::uniformBuffer(19, QRhiShaderResourceBinding::FragmentStage, m_flipUbo)
         };
         if (m_useLightCulling)
