@@ -12,6 +12,9 @@ class SphereItem : public MeshItem
 
 public:
     explicit SphereItem(QObject *parent = nullptr);
+
+    MeshType type() const override { return MeshType::Sphere; }
+
     QVector3D baseColor() const { return m_baseColor; }
     void setBaseColor(const QVector3D &color);
     QVector3D emissiveColor() const { return m_emissiveColor; }

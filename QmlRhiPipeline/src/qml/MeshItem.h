@@ -14,7 +14,19 @@ class MeshItem : public QObject
     Q_PROPERTY(bool visible READ visible WRITE setVisible NOTIFY visibleChanged)
 
 public:
+    enum class MeshType
+    {
+        Model,
+        StaticLight,
+        MovingHead,
+        Cube,
+        Sphere
+    };
+    Q_ENUM(MeshType)
+
     explicit MeshItem(QObject *parent = nullptr);
+
+    virtual MeshType type() const = 0;
 
     QVector3D position() const { return m_position; }
     void setPosition(const QVector3D &position);

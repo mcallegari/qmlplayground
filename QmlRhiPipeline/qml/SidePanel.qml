@@ -56,6 +56,43 @@ Rectangle {
             obj.rotationDegrees = Qt.vector3d(0, 0, 0)
     }
 
+    function fileUrlToPath(url) {
+        if (!url || typeof url !== "string")
+            return ""
+        if (url.indexOf("file://") !== 0)
+            return url
+        var local = url.slice(7)
+        if (local.indexOf("localhost/") === 0)
+            local = local.slice(9)
+        if (local.length === 0)
+            return ""
+        if (local[0] !== "/")
+            local = "/" + local
+        local = decodeURIComponent(local)
+        if (local.length >= 3 && local[0] === "/" && local[2] === ":" && /[A-Za-z]/.test(local[1]))
+            local = local.slice(1)
+        return local
+    }
+
+    function dialogToPath(fileValue) {
+        if (!fileValue)
+            return ""
+        if (fileValue.toLocalFile)
+            return fileValue.toLocalFile()
+        if (typeof fileValue === "string") {
+            if (fileValue.indexOf("file:") === 0)
+                return fileUrlToPath(fileValue)
+            return fileValue
+        }
+        if (fileValue.toString) {
+            var asString = fileValue.toString()
+            if (asString.indexOf("file:") === 0)
+                return fileUrlToPath(asString)
+            return asString
+        }
+        return ""
+    }
+
     function removeSelected() {
         if (renderer && renderer.removeSelectedItems)
             renderer.removeSelectedItems()
@@ -152,10 +189,23 @@ Rectangle {
         title: "Select model"
         nameFilters: ["3D Models (*.obj *.gltf *.glb *.dae)", "All Files (*)"]
         onAccepted: {
-            var path = selectedFile && selectedFile.toLocalFile ? selectedFile.toLocalFile() : ""
+            var path = dialogToPath(selectedFile)
             if (path && path.length > 0) {
                 panel.modelPath = path
                 panel.addItem("Model", path)
+            }
+        }
+    }
+
+    FileDialog {
+        id: goboDialog
+        title: "Select gobo"
+        nameFilters: ["Gobo SVG (*.svg)", "All Files (*)"]
+        onAccepted: {
+            var path = dialogToPath(selectedFile)
+            if (path && path.length > 0 && panel.selectedItem) {
+                panel.selectedItem.goboPath = path
+                goboField.text = path
             }
         }
     }
@@ -410,13 +460,14 @@ Rectangle {
                         Layout.fillWidth: true
                         placeholderText: "path/to/gobo.svg"
                         text: hasProp(panel.selectedItem, "goboPath") ? panel.selectedItem.goboPath : ""
+                        onEditingFinished: {
+                            if (panel.selectedItem)
+                                panel.selectedItem.goboPath = text
+                        }
                     }
                     Button {
-                        text: "Set"
-                        onClicked: {
-                            if (panel.selectedItem)
-                                panel.selectedItem.goboPath = goboField.text
-                        }
+                        text: "..."
+                        onClicked: goboDialog.open()
                     }
                 }
             }

@@ -17,6 +17,8 @@ class MovingHeadItem : public MeshItem
 public:
     explicit MovingHeadItem(QObject *parent = nullptr);
 
+    MeshType type() const override { return MeshType::MovingHead; }
+
     QString path() const { return m_path; }
     void setPath(const QString &path);
 

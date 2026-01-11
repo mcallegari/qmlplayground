@@ -13,6 +13,8 @@ class CubeItem : public MeshItem
 public:
     explicit CubeItem(QObject *parent = nullptr);
 
+    MeshType type() const override { return MeshType::Cube; }
+
     QVector3D baseColor() const { return m_baseColor; }
     void setBaseColor(const QVector3D &color);
     QVector3D emissiveColor() const { return m_emissiveColor; }

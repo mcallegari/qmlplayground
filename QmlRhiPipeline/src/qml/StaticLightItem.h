@@ -14,6 +14,8 @@ class StaticLightItem : public MeshItem
 public:
     explicit StaticLightItem(QObject *parent = nullptr);
 
+    MeshType type() const override { return MeshType::StaticLight; }
+
     QString path() const { return m_path; }
     void setPath(const QString &path);
 

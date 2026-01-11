@@ -11,7 +11,6 @@ Window {
     visible: true
     title: "Deferred Rendering with QRhi"
 
-    property real meshStep: 0.25
     property vector3d lastPickPos: Qt.vector3d(0, 0, 0)
     property bool showFpsOverlay: false
     property real fpsCurrent: 0.0
@@ -168,19 +167,6 @@ Window {
                 event.accepted = true
                 return
             }
-            var step = meshStep
-            if (event.modifiers & Qt.ShiftModifier)
-                step = meshStep * 0.25
-            if (event.modifiers & Qt.ControlModifier)
-                step = meshStep * 4.0
-            if (event.key === Qt.Key_Left
-                    || event.key === Qt.Key_Right
-                    || event.key === Qt.Key_Up
-                    || event.key === Qt.Key_Down
-                    || event.key === Qt.Key_PageUp
-                    || event.key === Qt.Key_PageDown) {
-                event.accepted = true
-            }
         }
 
         Camera {
@@ -247,6 +233,7 @@ Window {
             beamShape: Light.ConeShape
             beamRadius: 0.2
             //goboPath: "C:/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00024.svg"
+            //goboPath: "/Users/massimo/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00024.svg"
             goboPath: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/gobos/gobo00024.svg"
         }
 
@@ -317,8 +304,8 @@ Window {
         Model {
             id: suzanne
             //path: "C:/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
+            //path: "/Users/massimo/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
             path: "/home/massimo/projects/qmlplayground/QmlRhiPipeline/models/suzanne.obj"
-            //path: "/c/projects/qmlplayground/QmlRhiPipeline/models/Duck.gltf"
             position: Qt.vector3d(1.5, -1.2, 0)
             rotationDegrees: Qt.vector3d(0, -30, 0)
             scale: Qt.vector3d(1, 1, 1)

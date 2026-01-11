@@ -10,6 +10,8 @@ class ModelItem : public MeshItem
 public:
     explicit ModelItem(QObject *parent = nullptr);
 
+    MeshType type() const override { return MeshType::Model; }
+
     QString path() const { return m_path; }
     void setPath(const QString &path);
 

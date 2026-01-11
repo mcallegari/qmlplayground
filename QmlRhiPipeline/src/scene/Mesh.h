@@ -47,5 +47,6 @@ struct Mesh
     bool visible = true;
     int gizmoAxis = -1;
     int gizmoType = 0;
+    int selectionGroup = -1;
     Material material;
 };

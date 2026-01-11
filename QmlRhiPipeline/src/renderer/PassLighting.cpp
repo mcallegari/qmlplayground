@@ -12,6 +12,7 @@
 #include <vector>
 #include <cstring>
 #include <QtCore/QVector>
+#include <QtCore/QHash>
 
 #include "core/RhiContext.h"
 #include "core/RenderTargetCache.h"
@@ -352,6 +353,12 @@ void PassLighting::execute(FrameContext &ctx)
             float y;
             float z;
         };
+        struct GroupBounds
+        {
+            QVector3D minV;
+            QVector3D maxV;
+            bool hasBounds = false;
+        };
 
         const auto &meshes = ctx.scene->meshes();
         const int maxVertices = m_selectionMaxVertices > 0 ? m_selectionMaxVertices : 0;
@@ -365,33 +372,87 @@ void PassLighting::execute(FrameContext &ctx)
             {0, 4}, {1, 5}, {2, 6}, {3, 7}
         };
 
-        for (const Mesh &mesh : meshes)
+        auto getLocalBounds = [](const Mesh &mesh, QVector3D &minV, QVector3D &maxV) -> bool {
+            if (mesh.boundsValid)
+            {
+                minV = mesh.boundsMin;
+                maxV = mesh.boundsMax;
+                return true;
+            }
+            if (mesh.vertices.isEmpty())
+                return false;
+            minV = QVector3D(mesh.vertices[0].px, mesh.vertices[0].py, mesh.vertices[0].pz);
+            maxV = minV;
+            for (const Vertex &v : mesh.vertices)
+            {
+                minV.setX(qMin(minV.x(), v.px));
+                minV.setY(qMin(minV.y(), v.py));
+                minV.setZ(qMin(minV.z(), v.pz));
+                maxV.setX(qMax(maxV.x(), v.px));
+                maxV.setY(qMax(maxV.y(), v.py));
+                maxV.setZ(qMax(maxV.z(), v.pz));
+            }
+            return true;
+        };
+
+        QHash<int, GroupBounds> boundsByGroup;
+        boundsByGroup.reserve(meshes.size());
+
+        for (int meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
         {
+            const Mesh &mesh = meshes[meshIndex];
             if (!mesh.selected)
                 continue;
             if (!mesh.visible)
                 continue;
-            if (mesh.vertices.isEmpty())
+            QVector3D localMin;
+            QVector3D localMax;
+            if (!getLocalBounds(mesh, localMin, localMax))
                 continue;
 
-            QVector3D minV = mesh.boundsMin;
-            QVector3D maxV = mesh.boundsMax;
-            if (!mesh.boundsValid)
-            {
-                minV = QVector3D(mesh.vertices[0].px, mesh.vertices[0].py, mesh.vertices[0].pz);
-                maxV = minV;
-                for (const Vertex &v : mesh.vertices)
-                {
-                    minV.setX(qMin(minV.x(), v.px));
-                    minV.setY(qMin(minV.y(), v.py));
-                    minV.setZ(qMin(minV.z(), v.pz));
-                    maxV.setX(qMax(maxV.x(), v.px));
-                    maxV.setY(qMax(maxV.y(), v.py));
-                    maxV.setZ(qMax(maxV.z(), v.pz));
-                }
-            }
+            const int groupId = mesh.selectionGroup >= 0 ? mesh.selectionGroup : meshIndex;
+            GroupBounds &group = boundsByGroup[groupId];
 
             QVector3D corners[8] = {
+                { localMin.x(), localMin.y(), localMin.z() },
+                { localMax.x(), localMin.y(), localMin.z() },
+                { localMax.x(), localMax.y(), localMin.z() },
+                { localMin.x(), localMax.y(), localMin.z() },
+                { localMin.x(), localMin.y(), localMax.z() },
+                { localMax.x(), localMin.y(), localMax.z() },
+                { localMax.x(), localMax.y(), localMax.z() },
+                { localMin.x(), localMax.y(), localMax.z() }
+            };
+
+            const QMatrix4x4 model = mesh.modelMatrix;
+            for (const QVector3D &corner : corners)
+            {
+                const QVector3D world = (model * QVector4D(corner, 1.0f)).toVector3D();
+                if (!group.hasBounds)
+                {
+                    group.minV = world;
+                    group.maxV = world;
+                    group.hasBounds = true;
+                }
+                else
+                {
+                    group.minV.setX(qMin(group.minV.x(), world.x()));
+                    group.minV.setY(qMin(group.minV.y(), world.y()));
+                    group.minV.setZ(qMin(group.minV.z(), world.z()));
+                    group.maxV.setX(qMax(group.maxV.x(), world.x()));
+                    group.maxV.setY(qMax(group.maxV.y(), world.y()));
+                    group.maxV.setZ(qMax(group.maxV.z(), world.z()));
+                }
+            }
+        }
+
+        for (auto it = boundsByGroup.cbegin(); it != boundsByGroup.cend(); ++it)
+        {
+            if (!it.value().hasBounds)
+                continue;
+            const QVector3D minV = it.value().minV;
+            const QVector3D maxV = it.value().maxV;
+            const QVector3D corners[8] = {
                 { minV.x(), minV.y(), minV.z() },
                 { maxV.x(), minV.y(), minV.z() },
                 { maxV.x(), maxV.y(), minV.z() },
@@ -401,15 +462,12 @@ void PassLighting::execute(FrameContext &ctx)
                 { maxV.x(), maxV.y(), maxV.z() },
                 { minV.x(), maxV.y(), maxV.z() }
             };
-
-            const QMatrix4x4 model = mesh.modelMatrix;
-
             for (const auto &edge : edges)
             {
                 if (maxVertices > 0 && int(vertices.size() + 2) > maxVertices)
                     break;
-                const QVector3D a = (model * QVector4D(corners[edge[0]], 1.0f)).toVector3D();
-                const QVector3D b = (model * QVector4D(corners[edge[1]], 1.0f)).toVector3D();
+                const QVector3D a = corners[edge[0]];
+                const QVector3D b = corners[edge[1]];
                 vertices.push_back({ a.x(), a.y(), a.z() });
                 vertices.push_back({ b.x(), b.y(), b.z() });
             }
@@ -890,4 +948,3 @@ void PassLighting::ensureSelectionBoxesPipeline(FrameContext &ctx, QRhiRenderTar
     m_selectionPipeline = pipeline;
     m_selectionRpDesc = rt->renderPassDescriptor();
 }
-

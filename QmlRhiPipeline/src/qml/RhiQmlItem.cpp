@@ -44,6 +44,32 @@ struct EmitterData
     float diameter = 0.0f;
 };
 
+struct MeshRecord
+{
+    const MeshItem *item = nullptr;
+    MeshItem::MeshType type = MeshItem::MeshType::Model;
+    QString path;
+    QVector3D position;
+    QVector3D rotationDegrees;
+    QVector3D scale;
+    QVector3D baseColor = QVector3D(0.7f, 0.7f, 0.7f);
+    QVector3D emissiveColor = QVector3D(0.0f, 0.0f, 0.0f);
+    float metalness = 0.0f;
+    float roughness = 0.5f;
+    float pan = 0.0f;
+    float tilt = 0.0f;
+    bool selected = false;
+    bool selectable = true;
+    bool visible = true;
+    int firstMesh = 0;
+    int meshCount = 0;
+    int armMesh = -1;
+    int headMesh = -1;
+    QVector3D armPivot = QVector3D(0.0f, 0.0f, 0.0f);
+    QVector3D headPivot = QVector3D(0.0f, 0.0f, 0.0f);
+    bool pivotsValid = false;
+};
+
 static bool isEmitterName(const QString &name)
 {
     return name.contains(QLatin1String("emitter"), Qt::CaseInsensitive);
@@ -191,6 +217,18 @@ static void applySelectionVisibility(QVector<Mesh> &meshes,
     }
 }
 
+static void applySelectionGroup(QVector<Mesh> &meshes,
+                                int firstMesh,
+                                int meshCount,
+                                int groupId)
+{
+    for (int i = firstMesh; i < firstMesh + meshCount; ++i)
+    {
+        Mesh &mesh = meshes[i];
+        mesh.selectionGroup = groupId;
+    }
+}
+
 static void applyMaterial(QVector<Mesh> &meshes,
                           int firstMesh,
                           int meshCount,
@@ -253,6 +291,30 @@ template <typename RecordT>
 static TransformInfo transformFromRecord(const RecordT &record)
 {
     return makeTransform(record.position, record.rotationDegrees, record.scale);
+}
+
+template <typename RecordT, typename ItemT>
+static void initCommonRecord(RecordT &record, const ItemT *item)
+{
+    record.position = item->position();
+    record.rotationDegrees = item->rotationDegrees();
+    record.scale = item->scale();
+    record.selected = item->isSelected();
+    record.selectable = item->selectable();
+    record.visible = item->visible();
+}
+
+template <typename RecordT>
+static TransformInfo applyCommonRecordTransforms(RecordT &record,
+                                                 QVector<Mesh> &meshes,
+                                                 bool setBase)
+{
+    const TransformInfo transform = transformFromRecord(record);
+    applyTransform(meshes, record.firstMesh, record.meshCount, transform, record.position, setBase);
+    applySelectionVisibility(meshes, record.firstMesh, record.meshCount,
+                             record.selected, record.selectable, record.visible);
+    applySelectionGroup(meshes, record.firstMesh, record.meshCount, record.firstMesh);
+    return transform;
 }
 
 template <typename RecordT>
@@ -327,30 +389,28 @@ static void hideEmitterMeshes(QVector<Mesh> &meshes, int firstMesh, int meshCoun
     }
 }
 
-template <typename RecordT, typename ItemT>
-static ItemT *pickHitForRecords(const QVector<RecordT> &records, int meshIndex)
+static MeshItem *pickHitForRecords(const QVector<MeshRecord> &records, int meshIndex)
 {
-    for (const RecordT &record : records)
+    for (const auto &record : records)
     {
         if (meshIndex >= record.firstMesh && meshIndex < record.firstMesh + record.meshCount)
-            return const_cast<ItemT *>(record.item);
+            return const_cast<MeshItem *>(record.item);
     }
     return nullptr;
 }
 
-template <typename RecordT, typename ItemT>
-static void pruneMissingRecords(QVector<RecordT> &records,
-                                const QList<ItemT *> &liveItems,
+static void pruneMissingRecords(QVector<MeshRecord> &records,
+                                const QList<MeshItem *> &liveItems,
                                 QVector<Mesh> &meshes)
 {
-    QSet<const ItemT *> live;
+    QSet<const MeshItem *> live;
     live.reserve(liveItems.size());
-    for (const ItemT *item : liveItems)
+    for (const MeshItem *item : liveItems)
         live.insert(item);
 
     for (int i = records.size() - 1; i >= 0; --i)
     {
-        const RecordT &record = records[i];
+        const auto &record = records[i];
         if (live.contains(record.item))
             continue;
         applySelectionVisibility(meshes, record.firstMesh, record.meshCount, false, false, false);
@@ -448,164 +508,222 @@ public:
         for (const Light &light : lights)
             m_staticLights.push_back(light);
 
-        const auto qmlModels = qmlItem->findChildren<ModelItem *>(QString(), Qt::FindChildrenRecursively);
-        pruneMissingRecords(m_qmlModels, qmlModels, m_scene.meshes());
-        for (const ModelItem *modelItem : qmlModels)
-        {
-            if (modelItem->path().isEmpty())
-                continue;
-            if (modelItem->selectable())
-                selectableItems.push_back(const_cast<ModelItem *>(modelItem));
-            bool found = false;
-            for (ModelRecord &record : m_qmlModels)
+        const auto qmlMeshItems = qmlItem->findChildren<MeshItem *>(QString(), Qt::FindChildrenRecursively);
+        pruneMissingRecords(m_qmlMeshes, qmlMeshItems, m_scene.meshes());
+
+        auto findRecord = [&](const MeshItem *item) -> MeshRecord * {
+            for (MeshRecord &record : m_qmlMeshes)
             {
-                if (record.item != modelItem)
-                    continue;
-                found = true;
-                if (record.path != modelItem->path())
-                {
-                    qWarning() << "RhiQmlItemRenderer: model path changed after load for" << modelItem->path();
-                    break;
-                }
-                syncTransformFromItem(record, modelItem, m_scene.meshes());
-                syncSelectionVisibilityFromItem(record, modelItem, m_scene.meshes());
-                break;
+                if (record.item == item)
+                    return &record;
             }
-            if (found)
+            return nullptr;
+        };
+
+        for (MeshItem *meshItem : qmlMeshItems)
+        {
+            const MeshItem::MeshType type = meshItem->type();
+            MeshRecord *record = findRecord(meshItem);
+            QString path;
+            bool needsPath = false;
+
+            if (type == MeshItem::MeshType::Model)
+            {
+                const ModelItem *modelItem = qobject_cast<ModelItem *>(meshItem);
+                if (!modelItem)
+                    continue;
+                path = modelItem->path();
+                needsPath = true;
+            }
+            else if (type == MeshItem::MeshType::StaticLight)
+            {
+                const StaticLightItem *staticLight = qobject_cast<StaticLightItem *>(meshItem);
+                if (!staticLight)
+                    continue;
+                path = staticLight->path();
+                needsPath = true;
+            }
+            else if (type == MeshItem::MeshType::MovingHead)
+            {
+                const MovingHeadItem *movingHead = qobject_cast<MovingHeadItem *>(meshItem);
+                if (!movingHead)
+                    continue;
+                path = movingHead->path();
+                needsPath = true;
+            }
+
+            if (needsPath && path.isEmpty())
                 continue;
+
+            if (meshItem->selectable())
+                selectableItems.push_back(meshItem);
+
+            if (record)
+            {
+                record->type = type;
+                if (needsPath && record->path != path)
+                {
+                    if (type == MeshItem::MeshType::Model)
+                        qWarning() << "RhiQmlItemRenderer: model path changed after load for" << path;
+                    else if (type == MeshItem::MeshType::StaticLight)
+                        qWarning() << "RhiQmlItemRenderer: static light path changed after load for" << path;
+                    else if (type == MeshItem::MeshType::MovingHead)
+                        qWarning() << "RhiQmlItemRenderer: moving head path changed after load for" << path;
+                    continue;
+                }
+                applySelectionGroup(m_scene.meshes(), record->firstMesh, record->meshCount, record->firstMesh);
+
+                if (type == MeshItem::MeshType::Model)
+                {
+                    syncTransformFromItem(*record, meshItem, m_scene.meshes());
+                    syncSelectionVisibilityFromItem(*record, meshItem, m_scene.meshes());
+                }
+                else if (type == MeshItem::MeshType::StaticLight)
+                {
+                    syncTransformFromItem(*record, meshItem, m_scene.meshes());
+                    syncSelectionVisibilityFromItem(*record, meshItem, m_scene.meshes());
+                    hideEmitterMeshes(m_scene.meshes(), record->firstMesh, record->meshCount);
+                    const StaticLightItem *staticLight = static_cast<const StaticLightItem *>(meshItem);
+                    staticLightEmitters.insert(staticLight,
+                                               collectEmitters(m_scene.meshes(), record->firstMesh, record->meshCount));
+                    const TransformInfo transform = transformFromRecord(*record);
+                    staticLightItemTransforms.insert(staticLight, { transform.matrix, transform.rotation });
+                    const auto lights = staticLight->findChildren<LightItem *>(QString(), Qt::FindChildrenRecursively);
+                    for (const LightItem *lightItem : lights)
+                        staticLightTransforms.insert(lightItem, { transform.matrix, transform.rotation });
+                }
+                else if (type == MeshItem::MeshType::MovingHead)
+                {
+                    const MovingHeadItem *movingHead = static_cast<const MovingHeadItem *>(meshItem);
+                    const bool transformDirty = syncTransformFromItem(*record, meshItem, m_scene.meshes());
+                    syncSelectionVisibilityFromItem(*record, meshItem, m_scene.meshes());
+                    const float pan = movingHead->pan();
+                    const float tilt = movingHead->tilt();
+                    if (transformDirty || !qFuzzyCompare(record->pan, pan) || !qFuzzyCompare(record->tilt, tilt))
+                    {
+                        record->pan = pan;
+                        record->tilt = tilt;
+                        const TransformInfo transform = transformFromRecord(*record);
+                        applyMovingHeadTransforms(*record, m_scene.meshes(), transform,
+                                                  record->position, record->pan, record->tilt, false);
+                    }
+                    hideEmitterMeshes(m_scene.meshes(), record->firstMesh, record->meshCount);
+                    QVector<EmitterData> emitters = collectEmitters(m_scene.meshes(), record->firstMesh, record->meshCount);
+                    if (record->headMesh >= 0)
+                    {
+                        const QVector3D axis = -m_scene.meshes()[record->headMesh].modelMatrix.column(1).toVector3D();
+                        if (!axis.isNull())
+                        {
+                            const QVector3D dir = axis.normalized();
+                            for (EmitterData &emitter : emitters)
+                                emitter.direction = dir;
+                        }
+                    }
+                    movingHeadEmitters.insert(movingHead, emitters);
+                }
+                else if (type == MeshItem::MeshType::Cube)
+                {
+                    const CubeItem *cubeItem = static_cast<const CubeItem *>(meshItem);
+                    syncTransformFromItem(*record, meshItem, m_scene.meshes());
+                    const QVector3D baseColor = cubeItem->baseColor();
+                    const QVector3D emissiveColor = cubeItem->emissiveColor();
+                    const float metalness = cubeItem->metalness();
+                    const float roughness = cubeItem->roughness();
+                    if (record->baseColor != baseColor || record->emissiveColor != emissiveColor
+                            || !qFuzzyCompare(record->metalness, metalness)
+                            || !qFuzzyCompare(record->roughness, roughness))
+                    {
+                        record->baseColor = baseColor;
+                        record->emissiveColor = emissiveColor;
+                        record->metalness = metalness;
+                        record->roughness = roughness;
+                        applyMaterial(m_scene.meshes(), record->firstMesh, record->meshCount,
+                                      baseColor, emissiveColor, metalness, roughness);
+                    }
+                    syncSelectionVisibilityFromItem(*record, meshItem, m_scene.meshes());
+                }
+                else if (type == MeshItem::MeshType::Sphere)
+                {
+                    const SphereItem *sphereItem = static_cast<const SphereItem *>(meshItem);
+                    syncTransformFromItem(*record, meshItem, m_scene.meshes());
+                    const QVector3D baseColor = sphereItem->baseColor();
+                    const QVector3D emissiveColor = sphereItem->emissiveColor();
+                    const float metalness = sphereItem->metalness();
+                    const float roughness = sphereItem->roughness();
+                    if (record->baseColor != baseColor || record->emissiveColor != emissiveColor
+                            || !qFuzzyCompare(record->metalness, metalness)
+                            || !qFuzzyCompare(record->roughness, roughness))
+                    {
+                        record->baseColor = baseColor;
+                        record->emissiveColor = emissiveColor;
+                        record->metalness = metalness;
+                        record->roughness = roughness;
+                        applyMaterial(m_scene.meshes(), record->firstMesh, record->meshCount,
+                                      baseColor, emissiveColor, metalness, roughness);
+                    }
+                    syncSelectionVisibilityFromItem(*record, meshItem, m_scene.meshes());
+                }
+                continue;
+            }
 
             const int beforeCount = m_scene.meshes().size();
-            if (!m_loader.loadModel(modelItem->path(), m_scene, true))
-            {
-                qWarning() << "RhiQmlItemRenderer: failed to load model" << modelItem->path();
-                continue;
-            }
-            const int meshCount = m_scene.meshes().size() - beforeCount;
-            ModelRecord record;
-            record.item = modelItem;
-            record.path = modelItem->path();
-            record.position = modelItem->position();
-            record.rotationDegrees = modelItem->rotationDegrees();
-            record.scale = modelItem->scale();
-            record.selected = modelItem->isSelected();
-            record.selectable = modelItem->selectable();
-            record.visible = modelItem->visible();
-            record.firstMesh = beforeCount;
-            record.meshCount = meshCount;
+            bool created = false;
 
-            const TransformInfo transform = transformFromRecord(record);
-            applyTransform(m_scene.meshes(), record.firstMesh, record.meshCount,
-                           transform, record.position, true);
-            applySelectionVisibility(m_scene.meshes(), record.firstMesh, record.meshCount,
-                                     record.selected, record.selectable, record.visible);
-            m_qmlModels.push_back(record);
-        }
-
-        const auto qmlStaticLights = qmlItem->findChildren<StaticLightItem *>(QString(), Qt::FindChildrenRecursively);
-        pruneMissingRecords(m_qmlStaticLights, qmlStaticLights, m_scene.meshes());
-        for (const StaticLightItem *staticLight : qmlStaticLights)
-        {
-            if (staticLight->path().isEmpty())
-                continue;
-            if (staticLight->selectable())
-                selectableItems.push_back(const_cast<StaticLightItem *>(staticLight));
-            bool found = false;
-            for (StaticLightRecord &record : m_qmlStaticLights)
+            if (type == MeshItem::MeshType::Model
+                    || type == MeshItem::MeshType::StaticLight
+                    || type == MeshItem::MeshType::MovingHead)
             {
-                if (record.item != staticLight)
+                if (!m_loader.loadModel(path, m_scene, true))
+                {
+                    if (type == MeshItem::MeshType::Model)
+                        qWarning() << "RhiQmlItemRenderer: failed to load model" << path;
+                    else if (type == MeshItem::MeshType::StaticLight)
+                        qWarning() << "RhiQmlItemRenderer: failed to load static light model" << path;
+                    else if (type == MeshItem::MeshType::MovingHead)
+                        qWarning() << "RhiQmlItemRenderer: failed to load moving head model" << path;
                     continue;
-                found = true;
-                if (record.path != staticLight->path())
-                {
-                    qWarning() << "RhiQmlItemRenderer: static light path changed after load for" << staticLight->path();
-                    break;
                 }
-                syncTransformFromItem(record, staticLight, m_scene.meshes());
-                syncSelectionVisibilityFromItem(record, staticLight, m_scene.meshes());
-                hideEmitterMeshes(m_scene.meshes(), record.firstMesh, record.meshCount);
-                staticLightEmitters.insert(staticLight,
-                                           collectEmitters(m_scene.meshes(), record.firstMesh, record.meshCount));
-                const TransformInfo transform = transformFromRecord(record);
-                staticLightItemTransforms.insert(staticLight, { transform.matrix, transform.rotation });
-                const auto lights = staticLight->findChildren<LightItem *>(QString(), Qt::FindChildrenRecursively);
-                for (const LightItem *lightItem : lights)
-                    staticLightTransforms.insert(lightItem, { transform.matrix, transform.rotation });
-                break;
+                created = true;
             }
-            if (found)
+            else if (type == MeshItem::MeshType::Cube)
+            {
+                m_scene.meshes().push_back(createUnitCubeMesh());
+                created = true;
+            }
+            else if (type == MeshItem::MeshType::Sphere)
+            {
+                m_scene.meshes().push_back(createSphereMesh());
+                created = true;
+            }
+
+            if (!created)
                 continue;
 
-            const int beforeCount = m_scene.meshes().size();
-            if (!m_loader.loadModel(staticLight->path(), m_scene, true))
-            {
-                qWarning() << "RhiQmlItemRenderer: failed to load static light model" << staticLight->path();
-                continue;
-            }
             const int meshCount = m_scene.meshes().size() - beforeCount;
-            StaticLightRecord record;
-            record.item = staticLight;
-            record.path = staticLight->path();
-            record.position = staticLight->position();
-            record.rotationDegrees = staticLight->rotationDegrees();
-            record.scale = staticLight->scale();
-            record.selected = staticLight->isSelected();
-            record.selectable = staticLight->selectable();
-            record.visible = staticLight->visible();
-            record.firstMesh = beforeCount;
-            record.meshCount = meshCount;
+            MeshRecord newRecord;
+            newRecord.item = meshItem;
+            newRecord.type = type;
+            newRecord.path = path;
+            initCommonRecord(newRecord, meshItem);
+            newRecord.firstMesh = beforeCount;
+            newRecord.meshCount = meshCount;
 
-            const TransformInfo transform = transformFromRecord(record);
-            applyTransform(m_scene.meshes(), record.firstMesh, record.meshCount,
-                           transform, record.position, true);
-            applySelectionVisibility(m_scene.meshes(), record.firstMesh, record.meshCount,
-                                     record.selected, record.selectable, record.visible);
-            hideEmitterMeshes(m_scene.meshes(), record.firstMesh, record.meshCount);
-            staticLightEmitters.insert(staticLight,
-                                       collectEmitters(m_scene.meshes(), record.firstMesh, record.meshCount));
-            staticLightItemTransforms.insert(staticLight, { transform.matrix, transform.rotation });
-            const auto lights = staticLight->findChildren<LightItem *>(QString(), Qt::FindChildrenRecursively);
-            for (const LightItem *lightItem : lights)
-                staticLightTransforms.insert(lightItem, { transform.matrix, transform.rotation });
-
-            m_qmlStaticLights.push_back(record);
-        }
-
-        const auto qmlMovingHeads = qmlItem->findChildren<MovingHeadItem *>(QString(), Qt::FindChildrenRecursively);
-        pruneMissingRecords(m_qmlMovingHeads, qmlMovingHeads, m_scene.meshes());
-        for (const MovingHeadItem *movingHead : qmlMovingHeads)
-        {
-            if (movingHead->path().isEmpty())
-                continue;
-            if (movingHead->selectable())
-                selectableItems.push_back(const_cast<MovingHeadItem *>(movingHead));
-            bool found = false;
-            for (MovingHeadRecord &record : m_qmlMovingHeads)
+            if (type == MeshItem::MeshType::MovingHead)
             {
-                if (record.item != movingHead)
-                    continue;
-                found = true;
-                if (record.path != movingHead->path())
+                const MovingHeadItem *movingHead = static_cast<const MovingHeadItem *>(meshItem);
+                newRecord.pan = movingHead->pan();
+                newRecord.tilt = movingHead->tilt();
+                const TransformInfo transform = transformFromRecord(newRecord);
+                applyMovingHeadTransforms(newRecord, m_scene.meshes(), transform,
+                                          newRecord.position, newRecord.pan, newRecord.tilt, true);
+                applySelectionVisibility(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount,
+                                         newRecord.selected, newRecord.selectable, newRecord.visible);
+                applySelectionGroup(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount, newRecord.firstMesh);
+                hideEmitterMeshes(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount);
+                QVector<EmitterData> emitters = collectEmitters(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount);
+                if (newRecord.headMesh >= 0)
                 {
-                    qWarning() << "RhiQmlItemRenderer: moving head path changed after load for" << movingHead->path();
-                    break;
-                }
-                const bool transformDirty = syncTransformFromItem(record, movingHead, m_scene.meshes());
-                syncSelectionVisibilityFromItem(record, movingHead, m_scene.meshes());
-                const float pan = movingHead->pan();
-                const float tilt = movingHead->tilt();
-                if (transformDirty || !qFuzzyCompare(record.pan, pan) || !qFuzzyCompare(record.tilt, tilt))
-                {
-                    record.pan = pan;
-                    record.tilt = tilt;
-                    const TransformInfo transform = transformFromRecord(record);
-                    applyMovingHeadTransforms(record, m_scene.meshes(), transform,
-                                              record.position, record.pan, record.tilt, false);
-                }
-                hideEmitterMeshes(m_scene.meshes(), record.firstMesh, record.meshCount);
-                QVector<EmitterData> emitters = collectEmitters(m_scene.meshes(), record.firstMesh, record.meshCount);
-                if (record.headMesh >= 0)
-                {
-                    const QVector3D axis = -m_scene.meshes()[record.headMesh].modelMatrix.column(1).toVector3D();
+                    const QVector3D axis = -m_scene.meshes()[newRecord.headMesh].modelMatrix.column(1).toVector3D();
                     if (!axis.isNull())
                     {
                         const QVector3D dir = axis.normalized();
@@ -613,177 +731,47 @@ public:
                             emitter.direction = dir;
                     }
                 }
-                movingHeadEmitters.insert(movingHead, emitters);
-                break;
+                movingHeadEmitters.insert(static_cast<const MovingHeadItem *>(meshItem), emitters);
             }
-            if (found)
-                continue;
-
-            const int beforeCount = m_scene.meshes().size();
-            if (!m_loader.loadModel(movingHead->path(), m_scene, true))
+            else
             {
-                qWarning() << "RhiQmlItemRenderer: failed to load moving head model" << movingHead->path();
-                continue;
-            }
-            const int meshCount = m_scene.meshes().size() - beforeCount;
-            MovingHeadRecord record;
-            record.item = movingHead;
-            record.path = movingHead->path();
-            record.position = movingHead->position();
-            record.rotationDegrees = movingHead->rotationDegrees();
-            record.scale = movingHead->scale();
-            record.pan = movingHead->pan();
-            record.tilt = movingHead->tilt();
-            record.selected = movingHead->isSelected();
-            record.selectable = movingHead->selectable();
-            record.visible = movingHead->visible();
-            record.firstMesh = beforeCount;
-            record.meshCount = meshCount;
-
-            const TransformInfo transform = transformFromRecord(record);
-            applyMovingHeadTransforms(record, m_scene.meshes(), transform,
-                                      record.position, record.pan, record.tilt, true);
-            applySelectionVisibility(m_scene.meshes(), record.firstMesh, record.meshCount,
-                                     record.selected, record.selectable, record.visible);
-            hideEmitterMeshes(m_scene.meshes(), record.firstMesh, record.meshCount);
-            QVector<EmitterData> emitters = collectEmitters(m_scene.meshes(), record.firstMesh, record.meshCount);
-            if (record.headMesh >= 0)
-            {
-                const QVector3D axis = -m_scene.meshes()[record.headMesh].modelMatrix.column(1).toVector3D();
-                if (!axis.isNull())
+                const TransformInfo transform = applyCommonRecordTransforms(newRecord, m_scene.meshes(), true);
+                if (type == MeshItem::MeshType::StaticLight)
                 {
-                    const QVector3D dir = axis.normalized();
-                    for (EmitterData &emitter : emitters)
-                        emitter.direction = dir;
+                    const StaticLightItem *staticLight = static_cast<const StaticLightItem *>(meshItem);
+                    hideEmitterMeshes(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount);
+                    staticLightEmitters.insert(staticLight,
+                                               collectEmitters(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount));
+                    staticLightItemTransforms.insert(staticLight, { transform.matrix, transform.rotation });
+                    const auto lights = staticLight->findChildren<LightItem *>(QString(), Qt::FindChildrenRecursively);
+                    for (const LightItem *lightItem : lights)
+                        staticLightTransforms.insert(lightItem, { transform.matrix, transform.rotation });
+                }
+                else if (type == MeshItem::MeshType::Cube)
+                {
+                    const CubeItem *cubeItem = static_cast<const CubeItem *>(meshItem);
+                    newRecord.baseColor = cubeItem->baseColor();
+                    newRecord.emissiveColor = cubeItem->emissiveColor();
+                    newRecord.metalness = cubeItem->metalness();
+                    newRecord.roughness = cubeItem->roughness();
+                    applyMaterial(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount,
+                                  newRecord.baseColor, newRecord.emissiveColor,
+                                  newRecord.metalness, newRecord.roughness);
+                }
+                else if (type == MeshItem::MeshType::Sphere)
+                {
+                    const SphereItem *sphereItem = static_cast<const SphereItem *>(meshItem);
+                    newRecord.baseColor = sphereItem->baseColor();
+                    newRecord.emissiveColor = sphereItem->emissiveColor();
+                    newRecord.metalness = sphereItem->metalness();
+                    newRecord.roughness = sphereItem->roughness();
+                    applyMaterial(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount,
+                                  newRecord.baseColor, newRecord.emissiveColor,
+                                  newRecord.metalness, newRecord.roughness);
                 }
             }
-            movingHeadEmitters.insert(movingHead, emitters);
 
-            m_qmlMovingHeads.push_back(record);
-        }
-
-        const auto qmlCubes = qmlItem->findChildren<CubeItem *>(QString(), Qt::FindChildrenRecursively);
-        pruneMissingRecords(m_qmlCubes, qmlCubes, m_scene.meshes());
-        for (const CubeItem *cubeItem : qmlCubes)
-        {
-            if (cubeItem->selectable())
-                selectableItems.push_back(const_cast<CubeItem *>(cubeItem));
-            bool found = false;
-            for (CubeRecord &record : m_qmlCubes)
-            {
-                if (record.item != cubeItem)
-                    continue;
-                found = true;
-                syncTransformFromItem(record, cubeItem, m_scene.meshes());
-                const QVector3D baseColor = cubeItem->baseColor();
-                const QVector3D emissiveColor = cubeItem->emissiveColor();
-                const float metalness = cubeItem->metalness();
-                const float roughness = cubeItem->roughness();
-                if (record.baseColor != baseColor || record.emissiveColor != emissiveColor
-                        || !qFuzzyCompare(record.metalness, metalness)
-                        || !qFuzzyCompare(record.roughness, roughness))
-                {
-                    record.baseColor = baseColor;
-                    record.emissiveColor = emissiveColor;
-                    record.metalness = metalness;
-                    record.roughness = roughness;
-                    applyMaterial(m_scene.meshes(), record.firstMesh, record.meshCount,
-                                  baseColor, emissiveColor, metalness, roughness);
-                }
-                syncSelectionVisibilityFromItem(record, cubeItem, m_scene.meshes());
-                break;
-            }
-            if (found)
-                continue;
-
-            const int beforeCount = m_scene.meshes().size();
-            m_scene.meshes().push_back(createUnitCubeMesh());
-            const int meshCount = m_scene.meshes().size() - beforeCount;
-            CubeRecord record;
-            record.item = cubeItem;
-            record.position = cubeItem->position();
-            record.rotationDegrees = cubeItem->rotationDegrees();
-            record.scale = cubeItem->scale();
-            record.selected = cubeItem->isSelected();
-            record.selectable = cubeItem->selectable();
-            record.visible = cubeItem->visible();
-            record.baseColor = cubeItem->baseColor();
-            record.emissiveColor = cubeItem->emissiveColor();
-            record.metalness = cubeItem->metalness();
-            record.roughness = cubeItem->roughness();
-            record.firstMesh = beforeCount;
-            record.meshCount = meshCount;
-
-            const TransformInfo transform = transformFromRecord(record);
-            applyTransform(m_scene.meshes(), record.firstMesh, record.meshCount,
-                           transform, record.position, true);
-            applySelectionVisibility(m_scene.meshes(), record.firstMesh, record.meshCount,
-                                     record.selected, record.selectable, record.visible);
-            applyMaterial(m_scene.meshes(), record.firstMesh, record.meshCount,
-                          record.baseColor, record.emissiveColor, record.metalness, record.roughness);
-            m_qmlCubes.push_back(record);
-        }
-
-        const auto qmlSpheres = qmlItem->findChildren<SphereItem *>(QString(), Qt::FindChildrenRecursively);
-        pruneMissingRecords(m_qmlSpheres, qmlSpheres, m_scene.meshes());
-        for (const SphereItem *sphereItem : qmlSpheres)
-        {
-            if (sphereItem->selectable())
-                selectableItems.push_back(const_cast<SphereItem *>(sphereItem));
-            bool found = false;
-            for (SphereRecord &record : m_qmlSpheres)
-            {
-                if (record.item != sphereItem)
-                    continue;
-                found = true;
-                syncTransformFromItem(record, sphereItem, m_scene.meshes());
-                const QVector3D baseColor = sphereItem->baseColor();
-                const QVector3D emissiveColor = sphereItem->emissiveColor();
-                const float metalness = sphereItem->metalness();
-                const float roughness = sphereItem->roughness();
-                if (record.baseColor != baseColor || record.emissiveColor != emissiveColor
-                        || !qFuzzyCompare(record.metalness, metalness)
-                        || !qFuzzyCompare(record.roughness, roughness))
-                {
-                    record.baseColor = baseColor;
-                    record.emissiveColor = emissiveColor;
-                    record.metalness = metalness;
-                    record.roughness = roughness;
-                    applyMaterial(m_scene.meshes(), record.firstMesh, record.meshCount,
-                                  baseColor, emissiveColor, metalness, roughness);
-                }
-                syncSelectionVisibilityFromItem(record, sphereItem, m_scene.meshes());
-                break;
-            }
-            if (found)
-                continue;
-
-            const int beforeCount = m_scene.meshes().size();
-            m_scene.meshes().push_back(createSphereMesh());
-            const int meshCount = m_scene.meshes().size() - beforeCount;
-            SphereRecord record;
-            record.item = sphereItem;
-            record.position = sphereItem->position();
-            record.rotationDegrees = sphereItem->rotationDegrees();
-            record.scale = sphereItem->scale();
-            record.selected = sphereItem->isSelected();
-            record.selectable = sphereItem->selectable();
-            record.visible = sphereItem->visible();
-            record.baseColor = sphereItem->baseColor();
-            record.emissiveColor = sphereItem->emissiveColor();
-            record.metalness = sphereItem->metalness();
-            record.roughness = sphereItem->roughness();
-            record.firstMesh = beforeCount;
-            record.meshCount = meshCount;
-
-            const TransformInfo transform = transformFromRecord(record);
-            applyTransform(m_scene.meshes(), record.firstMesh, record.meshCount,
-                           transform, record.position, true);
-            applySelectionVisibility(m_scene.meshes(), record.firstMesh, record.meshCount,
-                                     record.selected, record.selectable, record.visible);
-            applyMaterial(m_scene.meshes(), record.firstMesh, record.meshCount,
-                          record.baseColor, record.emissiveColor, record.metalness, record.roughness);
-            m_qmlSpheres.push_back(record);
+            m_qmlMeshes.push_back(newRecord);
         }
 
         qmlItem->updateSelectableItems(selectableItems);
@@ -1047,15 +1035,7 @@ public:
                 QObject *hitItem = nullptr;
                 if (hitOk)
                 {
-                    hitItem = pickHitForRecords<ModelRecord, ModelItem>(m_qmlModels, hit.meshIndex);
-                    if (!hitItem)
-                        hitItem = pickHitForRecords<StaticLightRecord, StaticLightItem>(m_qmlStaticLights, hit.meshIndex);
-                    if (!hitItem)
-                        hitItem = pickHitForRecords<MovingHeadRecord, MovingHeadItem>(m_qmlMovingHeads, hit.meshIndex);
-                    if (!hitItem)
-                        hitItem = pickHitForRecords<CubeRecord, CubeItem>(m_qmlCubes, hit.meshIndex);
-                    if (!hitItem)
-                        hitItem = pickHitForRecords<SphereRecord, SphereItem>(m_qmlSpheres, hit.meshIndex);
+                    hitItem = pickHitForRecords(m_qmlMeshes, hit.meshIndex);
                 }
 
                 QMetaObject::invokeMethod(qmlItem, "dispatchPickResult", Qt::QueuedConnection,
@@ -1092,89 +1072,7 @@ private:
     Scene m_scene;
     AssimpLoader m_loader;
     QVector<Light> m_staticLights;
-    struct ModelRecord
-    {
-        const ModelItem *item = nullptr;
-        QString path;
-        QVector3D position;
-        QVector3D rotationDegrees;
-        QVector3D scale;
-        bool selected = false;
-        bool selectable = true;
-        bool visible = true;
-        int firstMesh = 0;
-        int meshCount = 0;
-    };
-    QVector<ModelRecord> m_qmlModels;
-    struct StaticLightRecord
-    {
-        const StaticLightItem *item = nullptr;
-        QString path;
-        QVector3D position;
-        QVector3D rotationDegrees;
-        QVector3D scale;
-        bool selected = false;
-        bool selectable = true;
-        bool visible = true;
-        int firstMesh = 0;
-        int meshCount = 0;
-    };
-    QVector<StaticLightRecord> m_qmlStaticLights;
-    struct MovingHeadRecord
-    {
-        const MovingHeadItem *item = nullptr;
-        QString path;
-        QVector3D position;
-        QVector3D rotationDegrees;
-        QVector3D scale;
-        float pan = 0.0f;
-        float tilt = 0.0f;
-        bool selected = false;
-        bool selectable = true;
-        bool visible = true;
-        int firstMesh = 0;
-        int meshCount = 0;
-        int armMesh = -1;
-        int headMesh = -1;
-        QVector3D armPivot = QVector3D(0.0f, 0.0f, 0.0f);
-        QVector3D headPivot = QVector3D(0.0f, 0.0f, 0.0f);
-        bool pivotsValid = false;
-    };
-    QVector<MovingHeadRecord> m_qmlMovingHeads;
-    struct CubeRecord
-    {
-        const CubeItem *item = nullptr;
-        QVector3D position;
-        QVector3D rotationDegrees;
-        QVector3D scale;
-        QVector3D baseColor;
-        QVector3D emissiveColor;
-        float metalness = 0.0f;
-        float roughness = 0.5f;
-        bool selected = false;
-        bool selectable = true;
-        bool visible = true;
-        int firstMesh = 0;
-        int meshCount = 0;
-    };
-    QVector<CubeRecord> m_qmlCubes;
-    struct SphereRecord
-    {
-        const SphereItem *item = nullptr;
-        QVector3D position;
-        QVector3D rotationDegrees;
-        QVector3D scale;
-        QVector3D baseColor;
-        QVector3D emissiveColor;
-        float metalness = 0.0f;
-        float roughness = 0.5f;
-        bool selected = false;
-        bool selectable = true;
-        bool visible = true;
-        int firstMesh = 0;
-        int meshCount = 0;
-    };
-    QVector<SphereRecord> m_qmlSpheres;
+    QVector<MeshRecord> m_qmlMeshes;
     struct GizmoPart
     {
         int meshIndex = -1;
@@ -1267,99 +1165,7 @@ private:
         QVector3D sum;
         int count = 0;
 
-        for (const ModelRecord &record : m_qmlModels)
-        {
-            if (!record.selected)
-                continue;
-            QVector3D minV;
-            QVector3D maxV;
-            bool hasBounds = false;
-            for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
-            {
-                const Mesh &mesh = m_scene.meshes()[i];
-                if (!mesh.visible)
-                    continue;
-                if (!mesh.selectable)
-                    continue;
-                accumulateMeshBounds(mesh, minV, maxV, hasBounds);
-            }
-            if (hasBounds)
-            {
-                sum += (minV + maxV) * 0.5f;
-                ++count;
-            }
-        }
-
-        for (const StaticLightRecord &record : m_qmlStaticLights)
-        {
-            if (!record.selected)
-                continue;
-            QVector3D minV;
-            QVector3D maxV;
-            bool hasBounds = false;
-            for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
-            {
-                const Mesh &mesh = m_scene.meshes()[i];
-                if (!mesh.visible)
-                    continue;
-                if (!mesh.selectable)
-                    continue;
-                accumulateMeshBounds(mesh, minV, maxV, hasBounds);
-            }
-            if (hasBounds)
-            {
-                sum += (minV + maxV) * 0.5f;
-                ++count;
-            }
-        }
-
-        for (const MovingHeadRecord &record : m_qmlMovingHeads)
-        {
-            if (!record.selected)
-                continue;
-            QVector3D minV;
-            QVector3D maxV;
-            bool hasBounds = false;
-            for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
-            {
-                const Mesh &mesh = m_scene.meshes()[i];
-                if (!mesh.visible)
-                    continue;
-                if (!mesh.selectable)
-                    continue;
-                accumulateMeshBounds(mesh, minV, maxV, hasBounds);
-            }
-            if (hasBounds)
-            {
-                sum += (minV + maxV) * 0.5f;
-                ++count;
-            }
-        }
-
-        for (const CubeRecord &record : m_qmlCubes)
-        {
-            if (!record.selected)
-                continue;
-            QVector3D minV;
-            QVector3D maxV;
-            bool hasBounds = false;
-            for (int i = record.firstMesh; i < record.firstMesh + record.meshCount; ++i)
-            {
-                const Mesh &mesh = m_scene.meshes()[i];
-                if (!mesh.visible)
-                    continue;
-                if (!mesh.selectable)
-                    continue;
-                accumulateMeshBounds(mesh, minV, maxV, hasBounds);
-            }
-            if (hasBounds)
-            {
-                sum += (minV + maxV) * 0.5f;
-                ++count;
-            }
-        }
-
-        for (const SphereRecord &record : m_qmlSpheres)
+        for (const MeshRecord &record : m_qmlMeshes)
         {
             if (!record.selected)
                 continue;
@@ -1391,43 +1197,11 @@ private:
     void buildDragSelection()
     {
         m_dragSelection.clear();
-        for (const ModelRecord &record : m_qmlModels)
+        for (const MeshRecord &record : m_qmlMeshes)
         {
             if (!record.selected)
                 continue;
-            m_dragSelection.push_back({ const_cast<ModelItem *>(record.item),
-                                        record.position,
-                                        record.rotationDegrees });
-        }
-        for (const StaticLightRecord &record : m_qmlStaticLights)
-        {
-            if (!record.selected)
-                continue;
-            m_dragSelection.push_back({ const_cast<StaticLightItem *>(record.item),
-                                        record.position,
-                                        record.rotationDegrees });
-        }
-        for (const MovingHeadRecord &record : m_qmlMovingHeads)
-        {
-            if (!record.selected)
-                continue;
-            m_dragSelection.push_back({ const_cast<MovingHeadItem *>(record.item),
-                                        record.position,
-                                        record.rotationDegrees });
-        }
-        for (const CubeRecord &record : m_qmlCubes)
-        {
-            if (!record.selected)
-                continue;
-            m_dragSelection.push_back({ const_cast<CubeItem *>(record.item),
-                                        record.position,
-                                        record.rotationDegrees });
-        }
-        for (const SphereRecord &record : m_qmlSpheres)
-        {
-            if (!record.selected)
-                continue;
-            m_dragSelection.push_back({ const_cast<SphereItem *>(record.item),
+            m_dragSelection.push_back({ const_cast<MeshItem *>(record.item),
                                         record.position,
                                         record.rotationDegrees });
         }
