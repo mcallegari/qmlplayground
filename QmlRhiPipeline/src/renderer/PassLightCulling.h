@@ -18,9 +18,10 @@ private:
     QRhiShaderResourceBindings *m_srb = nullptr;
     QRhiBuffer *m_lightUbo = nullptr;
     QRhiBuffer *m_cullUbo = nullptr;
-    QRhiBuffer *m_lightIndexBuffer = nullptr;
+    QRhiTexture *m_lightIndexTexture = nullptr;
     QSize m_lastSize;
-    int m_tileSize = 16;
-    int m_lastTileCountX = 0;
-    int m_lastTileCountY = 0;
+    int m_clusterSize = 120;
+    int m_clusterCountZ = 24;
+    int m_lastClusterCountX = 0;
+    int m_lastClusterCountY = 0;
 };

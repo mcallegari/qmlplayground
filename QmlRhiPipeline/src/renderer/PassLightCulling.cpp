@@ -1,9 +1,11 @@
 #include "renderer/PassLightCulling.h"
 
 #include <QtCore/QVector>
+#include <QtCore/QDebug>
 #include <QtCore/QtGlobal>
 #include <QtGui/QMatrix4x4>
 #include <cstring>
+#include <cmath>
 
 #include "core/RhiContext.h"
 #include "core/ShaderManager.h"
@@ -28,7 +30,9 @@ struct CullParams
     float view[16];
     float proj[16];
     QVector4D screen; // x=width y=height z=invW w=invH
-    QVector4D tile;   // x=tileCountX y=tileCountY z=tileSize w=enabled
+    QVector4D cluster; // x=countX y=countY z=countZ w=clusterSize
+    QVector4D zParams; // x=logScale y=logBias z=near w=far
+    QVector4D flags;   // x=enabled
 };
 
 } // namespace
@@ -40,19 +44,12 @@ void PassLightCulling::prepare(FrameContext &ctx)
     QRhi *rhi = ctx.rhi->rhi();
     if (!rhi)
         return;
-    if (rhi->backend() == QRhi::Metal)
-    {
-        // Metal path: avoid storage-buffer based light culling until validated.
-        ctx.lightCulling->enabled = false;
-        ctx.lightCulling->tileLightIndexBuffer = nullptr;
-        return;
-    }
-
     const bool supported = rhi->isFeatureSupported(QRhi::Compute);
     ctx.lightCulling->enabled = supported;
     if (!supported)
-        ctx.lightCulling->tileLightIndexBuffer = nullptr;
-    ctx.lightCulling->tileSize = m_tileSize;
+        ctx.lightCulling->clusterLightIndexTexture = nullptr;
+    ctx.lightCulling->clusterSize = m_clusterSize;
+    ctx.lightCulling->clusterCountZ = m_clusterCountZ;
 
     if (!supported)
         return;
@@ -63,22 +60,23 @@ void PassLightCulling::prepare(FrameContext &ctx)
     const QSize size = swapRt->pixelSize();
     if (size.isEmpty())
     {
-        ctx.lightCulling->tileLightIndexBuffer = nullptr;
+        ctx.lightCulling->clusterLightIndexTexture = nullptr;
         return;
     }
 
     ensureBuffers(ctx, size);
     ensurePipeline(ctx);
-    if (m_lightIndexBuffer)
+    if (m_lightIndexTexture)
     {
-        ctx.lightCulling->tileLightIndexBuffer = m_lightIndexBuffer;
-        ctx.lightCulling->tileCountX = m_lastTileCountX;
-        ctx.lightCulling->tileCountY = m_lastTileCountY;
+        ctx.lightCulling->clusterLightIndexTexture = m_lightIndexTexture;
+        ctx.lightCulling->clusterCountX = m_lastClusterCountX;
+        ctx.lightCulling->clusterCountY = m_lastClusterCountY;
+        ctx.lightCulling->clusterCountZ = m_clusterCountZ;
     }
     if (!m_pipeline || !m_srb)
     {
         ctx.lightCulling->enabled = false;
-        ctx.lightCulling->tileLightIndexBuffer = nullptr;
+        ctx.lightCulling->clusterLightIndexTexture = nullptr;
     }
 }
 
@@ -86,7 +84,7 @@ void PassLightCulling::execute(FrameContext &ctx)
 {
     if (!ctx.rhi || !ctx.scene || !ctx.lightCulling || !ctx.lightCulling->enabled)
         return;
-    if (!m_pipeline || !m_srb || !m_lightUbo || !m_cullUbo || !m_lightIndexBuffer)
+    if (!m_pipeline || !m_srb || !m_lightUbo || !m_cullUbo || !m_lightIndexTexture)
         return;
 
     QRhiCommandBuffer *cb = ctx.rhi->commandBuffer();
@@ -132,8 +130,9 @@ void PassLightCulling::execute(FrameContext &ctx)
     }
 
     const QSize size = m_lastSize;
-    const int tileCountX = m_lastTileCountX;
-    const int tileCountY = m_lastTileCountY;
+    const int clusterCountX = m_lastClusterCountX;
+    const int clusterCountY = m_lastClusterCountY;
+    const int clusterCountZ = m_clusterCountZ;
 
     CullParams params = {};
     const QMatrix4x4 view = ctx.scene->camera().viewMatrix();
@@ -143,27 +142,41 @@ void PassLightCulling::execute(FrameContext &ctx)
     std::memcpy(params.proj, proj.constData(), sizeof(params.proj));
     params.screen = QVector4D(float(size.width()), float(size.height()),
                               1.0f / float(size.width()), 1.0f / float(size.height()));
-    params.tile = QVector4D(float(tileCountX), float(tileCountY), float(m_tileSize), 1.0f);
+    const float nearPlane = qMax(0.001f, ctx.scene->camera().nearPlane());
+    const float farPlane = qMax(nearPlane + 0.001f, ctx.scene->camera().farPlane());
+    const float logNear = std::log2(nearPlane);
+    const float logFar = std::log2(farPlane);
+    const float logScale = float(clusterCountZ) / qMax(0.0001f, logFar - logNear);
+    const float logBias = -logNear * logScale;
+    params.cluster = QVector4D(float(clusterCountX), float(clusterCountY), float(clusterCountZ), float(m_clusterSize));
+    params.zParams = QVector4D(logScale, logBias, nearPlane, farPlane);
+    params.flags = QVector4D(1.0f, 0.0f, 0.0f, 0.0f);
 
     QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
-    u->updateDynamicBuffer(m_lightUbo, 0, sizeof(LightsData), &lightData);
+    u->uploadStaticBuffer(m_lightUbo, 0, sizeof(LightsData), &lightData);
     u->updateDynamicBuffer(m_cullUbo, 0, sizeof(CullParams), &params);
     cb->resourceUpdate(u);
 
     cb->beginComputePass();
     cb->setComputePipeline(m_pipeline);
     cb->setShaderResources(m_srb);
-    cb->dispatch(tileCountX, tileCountY, 1);
+    cb->dispatch(clusterCountX, clusterCountY, clusterCountZ);
     cb->endComputePass();
 
-    ctx.lightCulling->tileLightIndexBuffer = m_lightIndexBuffer;
-    ctx.lightCulling->tileCountX = tileCountX;
-    ctx.lightCulling->tileCountY = tileCountY;
+    ctx.lightCulling->clusterLightIndexTexture = m_lightIndexTexture;
+    ctx.lightCulling->clusterCountX = clusterCountX;
+    ctx.lightCulling->clusterCountY = clusterCountY;
+    ctx.lightCulling->clusterCountZ = clusterCountZ;
+    ctx.lightCulling->clusterSize = m_clusterSize;
+    ctx.lightCulling->logScale = logScale;
+    ctx.lightCulling->logBias = logBias;
+    ctx.lightCulling->nearPlane = nearPlane;
+    ctx.lightCulling->farPlane = farPlane;
 }
 
 void PassLightCulling::ensurePipeline(FrameContext &ctx)
 {
-    if (!ctx.rhi || !ctx.shaders || !m_lightIndexBuffer)
+    if (!ctx.rhi || !ctx.shaders || !m_lightIndexTexture)
         return;
     if (m_pipeline && m_srb)
         return;
@@ -180,7 +193,7 @@ void PassLightCulling::ensurePipeline(FrameContext &ctx)
 
     if (!m_lightUbo)
     {
-        m_lightUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(LightsData));
+        m_lightUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Static, QRhiBuffer::StorageBuffer, sizeof(LightsData));
         if (!m_lightUbo->create())
         {
             delete m_lightUbo;
@@ -201,9 +214,9 @@ void PassLightCulling::ensurePipeline(FrameContext &ctx)
 
     m_srb = ctx.rhi->rhi()->newShaderResourceBindings();
     m_srb->setBindings({
-        QRhiShaderResourceBinding::uniformBuffer(0, QRhiShaderResourceBinding::ComputeStage, m_lightUbo),
+        QRhiShaderResourceBinding::bufferLoad(0, QRhiShaderResourceBinding::ComputeStage, m_lightUbo),
         QRhiShaderResourceBinding::uniformBuffer(1, QRhiShaderResourceBinding::ComputeStage, m_cullUbo),
-        QRhiShaderResourceBinding::bufferLoadStore(2, QRhiShaderResourceBinding::ComputeStage, m_lightIndexBuffer)
+        QRhiShaderResourceBinding::imageStore(2, QRhiShaderResourceBinding::ComputeStage, m_lightIndexTexture, 0)
     });
     if (!m_srb->create())
     {
@@ -225,24 +238,41 @@ void PassLightCulling::ensurePipeline(FrameContext &ctx)
 
 void PassLightCulling::ensureBuffers(FrameContext &ctx, const QSize &size)
 {
-    const int tileCountX = (size.width() + m_tileSize - 1) / m_tileSize;
-    const int tileCountY = (size.height() + m_tileSize - 1) / m_tileSize;
-    if (size == m_lastSize && tileCountX == m_lastTileCountX && tileCountY == m_lastTileCountY && m_lightIndexBuffer)
+    const int clusterCountX = (size.width() + m_clusterSize - 1) / m_clusterSize;
+    const int clusterCountY = (size.height() + m_clusterSize - 1) / m_clusterSize;
+    if (size == m_lastSize && clusterCountX == m_lastClusterCountX && clusterCountY == m_lastClusterCountY && m_lightIndexTexture)
         return;
 
     m_lastSize = size;
-    m_lastTileCountX = tileCountX;
-    m_lastTileCountY = tileCountY;
+    m_lastClusterCountX = clusterCountX;
+    m_lastClusterCountY = clusterCountY;
 
-    delete m_lightIndexBuffer;
-    m_lightIndexBuffer = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Static, QRhiBuffer::StorageBuffer,
-                                                   quint32(tileCountX * tileCountY * (kMaxLights + 1) * sizeof(quint32)));
-    if (!m_lightIndexBuffer->create())
+    delete m_lightIndexTexture;
+    m_lightIndexTexture = nullptr;
+    const int width = kMaxLights + 1;
+    const int height = clusterCountX * clusterCountY * m_clusterCountZ;
+    if (width <= 0 || height <= 0)
     {
-        delete m_lightIndexBuffer;
-        m_lightIndexBuffer = nullptr;
         ctx.lightCulling->enabled = false;
-        ctx.lightCulling->tileLightIndexBuffer = nullptr;
+        ctx.lightCulling->clusterLightIndexTexture = nullptr;
+        return;
+    }
+    QRhi *rhi = ctx.rhi->rhi();
+    const QRhiTexture::Flags flags = QRhiTexture::UsedWithLoadStore;
+    if (!rhi->isTextureFormatSupported(QRhiTexture::R32UI, flags))
+    {
+        qWarning() << "PassLightCulling: R32UI load/store not supported, disabling clustered culling";
+        ctx.lightCulling->enabled = false;
+        ctx.lightCulling->clusterLightIndexTexture = nullptr;
+        return;
+    }
+    m_lightIndexTexture = rhi->newTexture(QRhiTexture::R32UI, QSize(width, height), 1, flags);
+    if (!m_lightIndexTexture->create())
+    {
+        delete m_lightIndexTexture;
+        m_lightIndexTexture = nullptr;
+        ctx.lightCulling->enabled = false;
+        ctx.lightCulling->clusterLightIndexTexture = nullptr;
         return;
     }
 

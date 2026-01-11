@@ -71,6 +71,8 @@ qt_add_shaders(qmlrhipipeline qmlrhipipeline_shaders
         shaders/lighting_d3d.frag
         shaders/lighting_metal.frag
         shaders/lighting_cull.frag
+        shaders/lighting_cull_d3d.frag
+        shaders/lighting_cull_metal.frag
         shaders/post_bloom_downsample.frag
         shaders/post_bloom_upsample.frag
         shaders/post_combine.frag

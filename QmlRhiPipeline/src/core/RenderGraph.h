@@ -12,7 +12,7 @@ class Scene;
 class QRhiTexture;
 class QRhiBuffer;
 
-inline constexpr int kMaxLights = 32;
+inline constexpr int kMaxLights = 100;
 inline constexpr int kMaxSpotShadows = 32;
 
 struct ShadowData
@@ -32,10 +32,15 @@ struct ShadowData
 
 struct LightCullingData
 {
-    QRhiBuffer *tileLightIndexBuffer = nullptr;
-    int tileCountX = 0;
-    int tileCountY = 0;
-    int tileSize = 16;
+    QRhiTexture *clusterLightIndexTexture = nullptr;
+    int clusterCountX = 0;
+    int clusterCountY = 0;
+    int clusterCountZ = 0;
+    int clusterSize = 120;
+    float logScale = 0.0f;
+    float logBias = 0.0f;
+    float nearPlane = 0.1f;
+    float farPlane = 1000.0f;
     bool enabled = false;
 };
 

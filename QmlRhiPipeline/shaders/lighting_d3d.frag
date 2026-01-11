@@ -1,7 +1,7 @@
 #version 450
 #extension GL_EXT_control_flow_attributes : enable
 
-#define MAX_LIGHTS 32
+#define MAX_LIGHTS 100
 #define MAX_SPOT_SHADOWS 32
 #define MAX_BEAM_STEPS 16
 layout(location = 0) in vec2 vUv;

@@ -30,12 +30,13 @@ private:
     QRhiSampler *m_shadowSampler = nullptr;
     QRhiSampler *m_spotShadowSampler = nullptr;
     QRhiSampler *m_goboSampler = nullptr;
+    QRhiSampler *m_lightIndexSampler = nullptr;
     QRhiBuffer *m_lightsUbo = nullptr;
     QRhiBuffer *m_cameraUbo = nullptr;
     QRhiBuffer *m_shadowUbo = nullptr;
     QRhiBuffer *m_flipUbo = nullptr;
     QRhiBuffer *m_lightCullUbo = nullptr;
-    QRhiBuffer *m_lightIndexBuffer = nullptr;
+    QRhiTexture *m_lightIndexTexture = nullptr;
     QRhiRenderPassDescriptor *m_rpDesc = nullptr;
     QRhiTexture *m_shadowMapRefs[3] = { nullptr, nullptr, nullptr };
     QRhiTexture *m_gbufColor0 = nullptr;

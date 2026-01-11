@@ -1,7 +1,7 @@
 #version 450
 #extension GL_EXT_control_flow_attributes : enable
 
-#define MAX_LIGHTS 32
+#define MAX_LIGHTS 100
 #define MAX_SPOT_SHADOWS 32
 #define MAX_BEAM_STEPS 16
 layout(location = 0) in vec2 vUv;
@@ -12,7 +12,7 @@ layout(binding = 1) uniform sampler2D gbuf1;
 layout(binding = 2) uniform sampler2D gbuf2;
 layout(binding = 20) uniform sampler2D gbufEmissive;
 
-layout(std140, binding = 3) uniform LightsUbo {
+layout(std430, binding = 3) readonly buffer LightsBuffer {
     vec4 lightCount;
     vec4 lightParams;
     vec4 lightFlags;
@@ -29,7 +29,7 @@ layout(std140, binding = 4) uniform CameraUbo {
     vec4 cameraPos;
 } uCamera;
 
-layout(std140, binding = 5) uniform ShadowUbo {
+layout(std430, binding = 5) readonly buffer ShadowBuffer {
     mat4 lightViewProj[3];
     vec4 splits;
     vec4 dirLightDir;
@@ -51,12 +51,12 @@ layout(std140, binding = 19) uniform FlipUbo {
 
 layout(std140, binding = 21) uniform LightCullUbo {
     vec4 screen; // x=width y=height z=invW w=invH
-    vec4 tile;   // x=tileCountX y=tileCountY z=tileSize w=enabled
+    vec4 cluster; // x=countX y=countY z=countZ w=clusterSize
+    vec4 zParams; // x=logScale y=logBias z=near w=far
+    vec4 flags;   // x=enabled
 } uLightCull;
 
-layout(std430, binding = 22) readonly buffer LightIndexBuffer {
-    uint data[];
-} bLightIndex;
+layout(binding = 22) uniform usampler2D lightIndexTex;
 
 vec3 decodeNormal(vec3 enc)
 {
@@ -267,21 +267,28 @@ void main()
     vec3 Lo = vec3(0.0);
 
     int count = int(uLights.lightCount.x);
-    int tileCountX = int(uLightCull.tile.x + 0.5);
-    int tileCountY = int(uLightCull.tile.y + 0.5);
-    int tileSize = int(uLightCull.tile.z + 0.5);
-    int tileX = tileSize > 0 ? int(gl_FragCoord.x) / tileSize : 0;
-    int tileY = tileSize > 0 ? int(gl_FragCoord.y) / tileSize : 0;
-    tileX = clamp(tileX, 0, max(tileCountX - 1, 0));
-    tileY = clamp(tileY, 0, max(tileCountY - 1, 0));
-    int tileIndex = tileX + tileY * tileCountX;
-    int baseIndex = tileIndex * (MAX_LIGHTS + 1);
-    int tileCount = (tileCountX > 0 && tileCountY > 0) ? int(bLightIndex.data[baseIndex]) : 0;
+    int countX = int(uLightCull.cluster.x + 0.5);
+    int countY = int(uLightCull.cluster.y + 0.5);
+    int countZ = int(uLightCull.cluster.z + 0.5);
+    int clusterSize = int(uLightCull.cluster.w + 0.5);
+    int clusterX = clusterSize > 0 ? int(gl_FragCoord.x) / clusterSize : 0;
+    int clusterY = clusterSize > 0 ? int(gl_FragCoord.y) / clusterSize : 0;
+    clusterX = clamp(clusterX, 0, max(countX - 1, 0));
+    clusterY = clamp(clusterY, 0, max(countY - 1, 0));
+    float viewDepth = max(0.001, - (uCamera.view * vec4(worldPos, 1.0)).z);
+    float logScale = uLightCull.zParams.x;
+    float logBias = uLightCull.zParams.y;
+    int clusterZ = int(floor(log2(viewDepth) * logScale + logBias));
+    clusterZ = clamp(clusterZ, 0, max(countZ - 1, 0));
+    int clusterIndex = clusterX + clusterY * countX + clusterZ * countX * countY;
+    int tileCount = (countX > 0 && countY > 0 && countZ > 0)
+            ? int(texelFetch(lightIndexTex, ivec2(0, clusterIndex), 0).r)
+            : 0;
     bool volumetricsEnabled = uLights.lightFlags.x > 0.5;
     bool smokeNoiseEnabled = uLights.lightFlags.y > 0.5;
     bool shadowsEnabled = uLights.lightFlags.z > 0.5;
     [[dont_unroll]] for (int li = 0; li < tileCount; ++li) {
-        int i = int(bLightIndex.data[baseIndex + 1 + li]);
+        int i = int(texelFetch(lightIndexTex, ivec2(1 + li, clusterIndex), 0).r);
         if (i < 0 || i >= count)
             continue;
         vec4 pr = uLights.lightPosRange[i];
@@ -367,7 +374,7 @@ void main()
     }
 
     // Directional light with CSM shadows (only when culling is disabled).
-    if (uLightCull.tile.w < 0.5) {
+    if (uLightCull.flags.x < 0.5) {
         vec3 dirColor = uShadow.dirLightColorIntensity.xyz * uShadow.dirLightColorIntensity.w;
         if (length(dirColor) > 0.0) {
             vec3 Ld = normalize(-uShadow.dirLightDir.xyz);
@@ -427,7 +434,7 @@ void main()
         }
 
         [[dont_unroll]] for (int li = 0; li < tileCount; ++li) {
-            int i = int(bLightIndex.data[baseIndex + 1 + li]);
+        int i = int(texelFetch(lightIndexTex, ivec2(1 + li, clusterIndex), 0).r);
             if (i < 0 || i >= count)
                 continue;
             vec4 other = uLights.lightOther[i];

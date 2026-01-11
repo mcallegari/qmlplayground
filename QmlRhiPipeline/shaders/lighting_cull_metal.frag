@@ -46,6 +46,15 @@ layout(std430, binding = 8) readonly buffer ShadowBuffer {
 layout(binding = 9) uniform sampler2DArray spotShadowMap;
 layout(binding = 16) uniform sampler2DArray spotGoboMap;
 
+layout(std140, binding = 10) uniform LightCullUbo {
+    vec4 screen; // x=width y=height z=invW w=invH
+    vec4 cluster; // x=countX y=countY z=countZ w=clusterSize
+    vec4 zParams; // x=logScale y=logBias z=near w=far
+    vec4 flags;   // x=enabled
+} uLightCull;
+
+layout(binding = 11) uniform usampler2D lightIndexTex;
+
 vec3 fresnelSchlick(float cosTheta, vec3 F0)
 {
     return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
@@ -195,8 +204,30 @@ void main()
     vec3 Lo = vec3(0.0);
 
     int count = int(uLights.lightCount.x);
-    for (int i = 0; i < count && i < MAX_LIGHTS; ++i)
+    int countX = int(uLightCull.cluster.x + 0.5);
+    int countY = int(uLightCull.cluster.y + 0.5);
+    int countZ = int(uLightCull.cluster.z + 0.5);
+    int clusterSize = int(uLightCull.cluster.w + 0.5);
+    int clusterX = clusterSize > 0 ? int(gl_FragCoord.x) / clusterSize : 0;
+    int clusterY = clusterSize > 0 ? int(gl_FragCoord.y) / clusterSize : 0;
+    clusterX = clamp(clusterX, 0, max(countX - 1, 0));
+    clusterY = clamp(clusterY, 0, max(countY - 1, 0));
+    float viewDepth = max(0.001, - (uCamera.view * vec4(worldPos, 1.0)).z);
+    float logScale = uLightCull.zParams.x;
+    float logBias = uLightCull.zParams.y;
+    int clusterZ = int(floor(log2(viewDepth) * logScale + logBias));
+    clusterZ = clamp(clusterZ, 0, max(countZ - 1, 0));
+    int clusterIndex = clusterX + clusterY * countX + clusterZ * countX * countY;
+    int listCount = (countX > 0 && countY > 0 && countZ > 0)
+            ? int(texelFetch(lightIndexTex, ivec2(0, clusterIndex), 0).r)
+            : 0;
+    bool useList = uLightCull.flags.x > 0.5;
+    int tileCount = useList ? listCount : count;
+    for (int li = 0; li < tileCount && li < MAX_LIGHTS; ++li)
     {
+        int i = useList ? int(texelFetch(lightIndexTex, ivec2(1 + li, clusterIndex), 0).r) : li;
+        if (i < 0 || i >= count)
+            continue;
         vec4 pr = uLights.lightPosRange[i];
         vec4 ci = uLights.lightColorIntensity[i];
         vec4 di = uLights.lightDirInner[i];
@@ -316,7 +347,10 @@ void main()
             rayLen = 50.0;
         }
 
-        for (int vi = 0; vi < count && vi < MAX_LIGHTS; ++vi) {
+        for (int li = 0; li < tileCount && li < MAX_LIGHTS; ++li) {
+            int vi = useList ? int(texelFetch(lightIndexTex, ivec2(1 + li, clusterIndex), 0).r) : li;
+            if (vi < 0 || vi >= count)
+                continue;
             vec4 other = uLights.lightOther[vi];
             int type = int(other.y + 0.5);
             if (type != 2)
