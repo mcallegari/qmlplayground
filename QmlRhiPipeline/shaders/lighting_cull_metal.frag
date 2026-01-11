@@ -1,18 +1,22 @@
 #version 450
-#extension GL_EXT_control_flow_attributes : enable
 
 #define MAX_LIGHTS 100
-#define MAX_SPOT_SHADOWS 32
 #define MAX_BEAM_STEPS 16
+
 layout(location = 0) in vec2 vUv;
 layout(location = 0) out vec4 outColor;
 
-layout(binding = 0) uniform sampler2D gbuf0;
-layout(binding = 1) uniform sampler2D gbuf1;
-layout(binding = 2) uniform sampler2D gbuf2;
-layout(binding = 20) uniform sampler2D gbufEmissive;
+layout(std140, binding = 0) uniform FlipUbo {
+    vec4 flip;
+} uFlip;
 
-layout(std140, binding = 3) uniform LightsUbo {
+layout(binding = 1) uniform sampler2D gbuf0;
+layout(binding = 2) uniform sampler2D gbufEmissive;
+layout(binding = 3) uniform sampler2D gbuf1;
+layout(binding = 4) uniform sampler2D gbuf2;
+layout(binding = 5) uniform sampler2D gbufDepth;
+
+layout(std140, binding = 6) uniform LightsUbo {
     vec4 lightCount;
     vec4 lightParams;
     vec4 lightFlags;
@@ -23,13 +27,13 @@ layout(std140, binding = 3) uniform LightsUbo {
     vec4 lightOther[MAX_LIGHTS];
 } uLights;
 
-layout(std140, binding = 4) uniform CameraUbo {
+layout(std140, binding = 7) uniform CameraUbo {
     mat4 view;
     mat4 invViewProj;
     vec4 cameraPos;
 } uCamera;
 
-layout(std140, binding = 5) uniform ShadowUbo {
+layout(std140, binding = 8) uniform ShadowUbo {
     mat4 lightViewProj[3];
     vec4 splits;
     vec4 dirLightDir;
@@ -39,19 +43,47 @@ layout(std140, binding = 5) uniform ShadowUbo {
     vec4 shadowDepthParams;
 } uShadow;
 
-layout(binding = 6) uniform sampler2D shadowMap0;
-layout(binding = 7) uniform sampler2D shadowMap1;
-layout(binding = 8) uniform sampler2D shadowMap2;
 layout(binding = 9) uniform sampler2DArray spotShadowMap;
-layout(binding = 17) uniform sampler2D gbufDepth;
-layout(binding = 18) uniform sampler2DArray spotGoboMap;
-layout(std140, binding = 19) uniform FlipUbo {
-    vec4 flip;
-} uFlip;
+layout(binding = 16) uniform sampler2DArray spotGoboMap;
 
-vec3 decodeNormal(vec3 enc)
+layout(std140, binding = 10) uniform LightCullUbo {
+    vec4 screen; // x=width y=height z=invW w=invH
+    vec4 cluster; // x=countX y=countY z=countZ w=clusterSize
+    vec4 zParams; // x=logScale y=logBias z=near w=far
+    vec4 flags;   // x=enabled
+} uLightCull;
+
+layout(binding = 11) uniform usampler2D lightIndexTex;
+
+vec3 fresnelSchlick(float cosTheta, vec3 F0)
 {
-    return normalize(enc * 2.0 - 1.0);
+    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
+}
+
+float distributionGGX(vec3 N, vec3 H, float roughness)
+{
+    float a = roughness * roughness;
+    float a2 = a * a;
+    float NdotH = max(dot(N, H), 0.0);
+    float NdotH2 = NdotH * NdotH;
+    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
+    return a2 / (3.14159265 * denom * denom);
+}
+
+float geometrySchlickGGX(float NdotV, float roughness)
+{
+    float r = roughness + 1.0;
+    float k = (r * r) / 8.0;
+    return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
+{
+    float NdotV = max(dot(N, V), 0.0);
+    float NdotL = max(dot(N, L), 0.0);
+    float ggx2 = geometrySchlickGGX(NdotV, roughness);
+    float ggx1 = geometrySchlickGGX(NdotL, roughness);
+    return ggx1 * ggx2;
 }
 
 float hash31(vec3 p)
@@ -96,6 +128,11 @@ float fbm3(vec3 p)
     return value;
 }
 
+vec2 shadowUvSpot(vec2 uv)
+{
+    return vec2(uv.x, 1.0 - uv.y);
+}
+
 vec3 reconstructWorldPosWithDepth(vec2 uvNdc, float depth)
 {
     float scale = uShadow.shadowDepthParams.x;
@@ -104,23 +141,6 @@ vec3 reconstructWorldPosWithDepth(vec2 uvNdc, float depth)
     vec4 clip = vec4(uvNdc * 2.0 - 1.0, ndcZ, 1.0);
     vec4 world = uCamera.invViewProj * clip;
     return world.xyz / max(world.w, 1e-6);
-}
-
-vec2 shadowUv(vec2 uv)
-{
-    return uv;
-}
-
-float sampleSpotShadowDepth(vec2 uv, int slot)
-{
-    int clamped = clamp(slot, 0, MAX_SPOT_SHADOWS - 1);
-    return texture(spotShadowMap, vec3(uv, float(clamped))).r;
-}
-
-float sampleSpotShadowDepthLod(vec2 uv, int slot, float lod)
-{
-    int clamped = clamp(slot, 0, MAX_SPOT_SHADOWS - 1);
-    return textureLod(spotShadowMap, vec3(uv, float(clamped)), lod).r;
 }
 
 bool spotProject(mat4 viewProj, vec3 worldPos, out vec2 uv)
@@ -133,33 +153,9 @@ bool spotProject(mat4 viewProj, vec3 worldPos, out vec2 uv)
     return uv.x >= 0.0 && uv.x <= 1.0 && uv.y >= 0.0 && uv.y <= 1.0;
 }
 
-float sampleShadowMap(int idx, vec3 worldPos, float bias)
+float sampleSpotShadowDepthLod(vec2 uv, int slot, float lod)
 {
-    vec4 clip;
-    if (idx == 0)
-        clip = uShadow.lightViewProj[0] * vec4(worldPos, 1.0);
-    else if (idx == 1)
-        clip = uShadow.lightViewProj[1] * vec4(worldPos, 1.0);
-    else
-        clip = uShadow.lightViewProj[2] * vec4(worldPos, 1.0);
-
-    vec3 ndc = clip.xyz / clip.w;
-    vec2 uv = shadowUv(ndc.xy * 0.5 + 0.5);
-    float depth = ndc.z * uShadow.shadowDepthParams.x + uShadow.shadowDepthParams.y;
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-        return 1.0;
-
-    float shadowDepth;
-    if (idx == 0)
-        shadowDepth = texture(shadowMap0, uv).r;
-    else if (idx == 1)
-        shadowDepth = texture(shadowMap1, uv).r;
-    else
-        shadowDepth = texture(shadowMap2, uv).r;
-
-    if (uShadow.shadowDepthParams.z > 0.5)
-        return depth + bias >= shadowDepth ? 1.0 : 0.0;
-    return depth - bias <= shadowDepth ? 1.0 : 0.0;
+    return textureLod(spotShadowMap, vec3(uv, float(slot)), lod).r;
 }
 
 float sampleSpotShadow(mat4 viewProj, vec3 worldPos, vec3 lightPos,
@@ -167,65 +163,15 @@ float sampleSpotShadow(mat4 viewProj, vec3 worldPos, vec3 lightPos,
 {
     vec4 clip = viewProj * vec4(worldPos, 1.0);
     vec3 ndc = clip.xyz / clip.w;
-    vec2 uv = shadowUv(ndc.xy * 0.5 + 0.5);
+    vec2 uv = shadowUvSpot(ndc.xy * 0.5 + 0.5);
     float dist = length(lightPos - worldPos);
     float depth = (dist - nearPlane) / max(farPlane - nearPlane, 1e-6);
     if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
         return 1.0;
     float shadowDepth = sampleSpotShadowDepthLod(uv, slot, 0.0);
+    if (uShadow.shadowDepthParams.z > 0.5)
+        return depth + bias >= shadowDepth ? 1.0 : 0.0;
     return depth - bias <= shadowDepth ? 1.0 : 0.0;
-}
-
-float sampleSpotShadowPcf(mat4 viewProj, vec3 worldPos, vec3 lightPos,
-                          float nearPlane, float farPlane, float bias, float texel, int slot)
-{
-    vec4 clip = viewProj * vec4(worldPos, 1.0);
-    vec3 ndc = clip.xyz / clip.w;
-    vec2 uv = shadowUv(ndc.xy * 0.5 + 0.5);
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-        return 1.0;
-    float dist = length(lightPos - worldPos);
-    float depth = (dist - nearPlane) / max(farPlane - nearPlane, 1e-6);
-    float sum = 0.0;
-    for (int y = -1; y <= 1; ++y) {
-        for (int x = -1; x <= 1; ++x) {
-            vec2 offset = vec2(float(x), float(y)) * texel;
-            float shadowDepth = sampleSpotShadowDepthLod(uv + offset, slot, 0.0);
-            sum += depth - bias <= shadowDepth ? 1.0 : 0.0;
-        }
-    }
-    return sum / 9.0;
-}
-
-vec3 fresnelSchlick(float cosTheta, vec3 F0)
-{
-    return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
-}
-
-float distributionGGX(vec3 N, vec3 H, float roughness)
-{
-    float a = roughness * roughness;
-    float a2 = a * a;
-    float NdotH = max(dot(N, H), 0.0);
-    float NdotH2 = NdotH * NdotH;
-    float denom = (NdotH2 * (a2 - 1.0) + 1.0);
-    return a2 / (3.14159265 * denom * denom);
-}
-
-float geometrySchlickGGX(float NdotV, float roughness)
-{
-    float r = roughness + 1.0;
-    float k = (r * r) / 8.0;
-    return NdotV / (NdotV * (1.0 - k) + k);
-}
-
-float geometrySmith(vec3 N, vec3 V, vec3 L, float roughness)
-{
-    float NdotV = max(dot(N, V), 0.0);
-    float NdotL = max(dot(N, L), 0.0);
-    float ggx2 = geometrySchlickGGX(NdotV, roughness);
-    float ggx1 = geometrySchlickGGX(NdotL, roughness);
-    return ggx1 * ggx2;
 }
 
 void main()
@@ -237,31 +183,51 @@ void main()
     if (uFlip.flip.y > 0.5)
         uvNdc.y = 1.0 - uvNdc.y;
 
-    vec3 baseColor = texture(gbuf0, uvSample).rgb;
-    float metalness = texture(gbuf0, uvSample).a;
+    vec4 g0 = texture(gbuf0, uvSample);
+    vec4 g1 = texture(gbuf1, uvSample);
+    vec3 baseColor = g0.rgb;
+    float metalness = g0.a;
+    float roughness = clamp(g1.a, 0.04, 1.0);
     vec3 emissive = texture(gbufEmissive, uvSample).rgb;
-
-    vec3 N = decodeNormal(texture(gbuf1, uvSample).rgb);
-    float roughness = texture(gbuf1, uvSample).a;
-
+    vec4 g2 = texture(gbuf2, uvSample);
+    float occlusion = g2.a;
     float depthSample = texture(gbufDepth, uvSample).r;
     vec3 worldPos;
     if (uShadow.shadowDepthParams.w > 0.5)
-        worldPos = texture(gbuf2, uvSample).rgb;
+        worldPos = g2.rgb;
     else
         worldPos = reconstructWorldPosWithDepth(uvNdc, depthSample);
-    float occlusion = texture(gbuf2, uvSample).a;
-
+    vec3 N = normalize(g1.rgb * 2.0 - 1.0);
     vec3 V = normalize(uCamera.cameraPos.xyz - worldPos);
 
-    vec3 F0 = mix(vec3(0.04), baseColor, metalness);
+    vec3 ambient = uLights.lightCount.yzw;
     vec3 Lo = vec3(0.0);
 
     int count = int(uLights.lightCount.x);
-    bool volumetricsEnabled = uLights.lightFlags.x > 0.5;
-    bool smokeNoiseEnabled = uLights.lightFlags.y > 0.5;
-    bool shadowsEnabled = uLights.lightFlags.z > 0.5;
-    [[dont_unroll]] for (int i = 0; i < count && i < MAX_LIGHTS; ++i) {
+    int countX = int(uLightCull.cluster.x + 0.5);
+    int countY = int(uLightCull.cluster.y + 0.5);
+    int countZ = int(uLightCull.cluster.z + 0.5);
+    int clusterSize = int(uLightCull.cluster.w + 0.5);
+    int clusterX = clusterSize > 0 ? int(gl_FragCoord.x) / clusterSize : 0;
+    int clusterY = clusterSize > 0 ? int(gl_FragCoord.y) / clusterSize : 0;
+    clusterX = clamp(clusterX, 0, max(countX - 1, 0));
+    clusterY = clamp(clusterY, 0, max(countY - 1, 0));
+    float viewDepth = max(0.001, - (uCamera.view * vec4(worldPos, 1.0)).z);
+    float logScale = uLightCull.zParams.x;
+    float logBias = uLightCull.zParams.y;
+    int clusterZ = int(floor(log2(viewDepth) * logScale + logBias));
+    clusterZ = clamp(clusterZ, 0, max(countZ - 1, 0));
+    int clusterIndex = clusterX + clusterY * countX + clusterZ * countX * countY;
+    int listCount = (countX > 0 && countY > 0 && countZ > 0)
+            ? int(texelFetch(lightIndexTex, ivec2(0, clusterIndex), 0).r)
+            : 0;
+    bool useList = uLightCull.flags.x > 0.5;
+    int tileCount = useList ? listCount : count;
+    for (int li = 0; li < tileCount && li < MAX_LIGHTS; ++li)
+    {
+        int i = useList ? int(texelFetch(lightIndexTex, ivec2(1 + li, clusterIndex), 0).r) : li;
+        if (i < 0 || i >= count)
+            continue;
         vec4 pr = uLights.lightPosRange[i];
         vec4 ci = uLights.lightColorIntensity[i];
         vec4 di = uLights.lightDirInner[i];
@@ -272,9 +238,12 @@ void main()
         float dist = 1.0;
         float attenuation = 1.0;
 
-        if (type == 0) { // Directional
+        if (type == 0) // Directional
+        {
             L = normalize(-di.xyz);
-        } else {
+        }
+        else
+        {
             L = pr.xyz - worldPos;
             dist = length(L);
             if (dist > pr.w)
@@ -284,23 +253,24 @@ void main()
         }
 
         float spotFactor = 1.0;
-        if (type == 2) { // Spot
+        if (type == 2) // Spot
+        {
             float cosInner = di.w;
             float cosOuter = other.x;
             vec3 Ldir = normalize(worldPos - pr.xyz);
             float cosTheta = dot(normalize(di.xyz), Ldir);
-            spotFactor = step(cosOuter, cosTheta);
+            spotFactor = smoothstep(cosOuter, cosInner, cosTheta);
             if (spotFactor <= 0.001)
                 continue;
         }
 
         float areaScale = 1.0;
-        if (type == 3) { // Area (approximate as scaled point)
+        if (type == 3)
             areaScale = max(0.25, other.z * other.w);
-        }
 
         vec3 gobo = vec3(1.0);
-        if (type == 2 && other.z >= 0.0) {
+        if (type == 2 && other.z >= 0.0)
+        {
             vec2 goboUv;
             if (spotProject(uShadow.spotLightViewProj[i], worldPos, goboUv))
                 gobo = textureLod(spotGoboMap, vec3(goboUv, other.z), 0.0).rgb;
@@ -309,27 +279,29 @@ void main()
         }
 
         vec3 radiance = ci.xyz * ci.w * attenuation * spotFactor * areaScale * gobo;
+        float NdotL = max(dot(N, L), 0.0);
         vec3 H = normalize(V + L);
 
+        vec3 F0 = mix(vec3(0.04), baseColor, metalness);
         float NDF = distributionGGX(N, H, roughness);
         float G = geometrySmith(N, V, L, roughness);
         vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
 
         vec3 nominator = NDF * G * F;
-        float denom = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.001;
+        float denom = 4.0 * max(dot(N, V), 0.0) * NdotL + 0.001;
         vec3 specular = nominator / denom;
 
         vec3 kS = F;
         vec3 kD = vec3(1.0) - kS;
         kD *= 1.0 - metalness;
-
-        float NdotL = max(dot(N, L), 0.0);
         vec3 diffuse = kD * baseColor / 3.14159265;
 
         float shadow = 1.0;
-        if (shadowsEnabled && type == 2) {
+        if (type == 2)
+        {
             vec4 spotParams = uShadow.spotShadowParams[i];
-            if (spotParams.y > 0.5) {
+            if (spotParams.y > 0.5)
+            {
                 int slot = int(spotParams.x + 0.5);
                 float bias = 0.001;
                 shadow = sampleSpotShadow(uShadow.spotLightViewProj[i],
@@ -341,45 +313,18 @@ void main()
                                           slot);
             }
         }
+
         Lo += (diffuse + specular) * radiance * NdotL * shadow;
     }
 
-    // Directional light with CSM shadows
-    vec3 dirColor = uShadow.dirLightColorIntensity.xyz * uShadow.dirLightColorIntensity.w;
-    if (length(dirColor) > 0.0) {
-        vec3 Ld = normalize(-uShadow.dirLightDir.xyz);
-        vec3 H = normalize(V + Ld);
-        float NDF = distributionGGX(N, H, roughness);
-        float G = geometrySmith(N, V, Ld, roughness);
-        vec3 F = fresnelSchlick(max(dot(H, V), 0.0), F0);
-        vec3 nominator = NDF * G * F;
-        float denom = 4.0 * max(dot(N, V), 0.0) * max(dot(N, Ld), 0.0) + 0.001;
-        vec3 specular = nominator / denom;
-        vec3 kS = F;
-        vec3 kD = (vec3(1.0) - kS) * (1.0 - metalness);
-        float NdotL = max(dot(N, Ld), 0.0);
-        vec3 diffuse = kD * baseColor / 3.14159265;
-
-        float viewDepth = - (uCamera.view * vec4(worldPos, 1.0)).z;
-        int cascade = 2;
-        if (viewDepth < uShadow.splits.x)
-            cascade = 0;
-        else if (viewDepth < uShadow.splits.y)
-            cascade = 1;
-
-        float bias = max(0.002 * (1.0 - dot(N, Ld)), 0.0005);
-        float shadow = shadowsEnabled ? sampleShadowMap(cascade, worldPos, bias) : 1.0;
-        Lo += (diffuse + specular) * dirColor * NdotL * shadow;
-    }
-
-    vec3 ambient = uLights.lightCount.yzw;
     vec3 color = (Lo + ambient * baseColor) * occlusion;
 
+    bool volumetricsEnabled = uLights.lightFlags.x > 0.5;
+    bool smokeNoiseEnabled = uLights.lightFlags.y > 0.5;
     float smokeAmount = max(uLights.lightParams.x, 0.0);
     int beamModel = int(uLights.lightParams.y + 0.5);
     vec3 beam = vec3(0.0);
     if (volumetricsEnabled && smokeAmount > 0.0) {
-        // Volumetric spotlight beam (screen-space, coarse ray-march).
         float depth = depthSample;
         float farDepth = (uShadow.shadowDepthParams.z > 0.5) ? 0.0 : 1.0;
         bool hasHit = abs(depth - farDepth) > 0.0005;
@@ -388,7 +333,7 @@ void main()
         vec3 hitPos = uCamera.cameraPos.xyz;
         if (hasHit) {
             if (uShadow.shadowDepthParams.w > 0.5)
-                hitPos = texture(gbuf2, uvSample).rgb;
+                hitPos = g2.rgb;
             else
                 hitPos = reconstructWorldPosWithDepth(uvNdc, depthSample);
             vec3 toHit = hitPos - uCamera.cameraPos.xyz;
@@ -402,7 +347,10 @@ void main()
             rayLen = 50.0;
         }
 
-        [[dont_unroll]] for (int vi = 0; vi < count && vi < MAX_LIGHTS; ++vi) {
+        for (int li = 0; li < tileCount && li < MAX_LIGHTS; ++li) {
+            int vi = useList ? int(texelFetch(lightIndexTex, ivec2(1 + li, clusterIndex), 0).r) : li;
+            if (vi < 0 || vi >= count)
+                continue;
             vec4 other = uLights.lightOther[vi];
             int type = int(other.y + 0.5);
             if (type != 2)
@@ -480,7 +428,7 @@ void main()
             int steps = clamp(int(other.w), 1, MAX_BEAM_STEPS);
             float stepLen = (tEnd - tStart) / float(steps);
             vec4 spotParams = uShadow.spotShadowParams[vi];
-            [[dont_unroll]] for (int s = 0; s < steps && s < MAX_BEAM_STEPS; ++s) {
+            for (int s = 0; s < steps && s < MAX_BEAM_STEPS; ++s) {
                 float t = tStart + (float(s) + 0.5) * stepLen;
                 vec3 p = uCamera.cameraPos.xyz + rayDir * t;
                 vec3 toP = p - pr.xyz;
@@ -529,7 +477,7 @@ void main()
                     density *= smokeMod;
                 }
                 density *= smokeAmount;
-                if (shadowsEnabled && spotParams.y > 0.5) {
+                if (spotParams.y > 0.5) {
                     float shadow = sampleSpotShadow(uShadow.spotLightViewProj[vi],
                                                     p,
                                                     pr.xyz,
@@ -551,6 +499,7 @@ void main()
             }
         }
     }
+
     color += emissive;
     color += beam * 0.06;
     outColor = vec4(color, 1.0);

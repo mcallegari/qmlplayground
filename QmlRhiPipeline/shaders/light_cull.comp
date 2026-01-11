@@ -1,6 +1,6 @@
 #version 450
 
-#define MAX_LIGHTS 32
+#define MAX_LIGHTS 100
 
 layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
 
@@ -19,30 +19,41 @@ layout(std140, binding = 1) uniform CullParams {
     mat4 view;
     mat4 proj;
     vec4 screen; // x=width y=height z=invW w=invH
-    vec4 tile;   // x=tileCountX y=tileCountY z=tileSize w=enabled
+    vec4 cluster; // x=countX y=countY z=countZ w=clusterSize
+    vec4 zParams; // x=logScale y=logBias z=near w=far
+    vec4 flags;   // x=enabled
 } uCull;
 
-layout(std430, binding = 2) buffer LightIndexBuffer {
-    uint data[];
-} bLightIndex;
+layout(r32ui, binding = 2) uniform uimage2D lightIndexImage;
 
 void main()
 {
-    uint tileX = gl_GlobalInvocationID.x;
-    uint tileY = gl_GlobalInvocationID.y;
-    uint tileCountX = uint(uCull.tile.x + 0.5);
-    uint tileCountY = uint(uCull.tile.y + 0.5);
-    if (tileX >= tileCountX || tileY >= tileCountY)
+    uint clusterX = gl_GlobalInvocationID.x;
+    uint clusterY = gl_GlobalInvocationID.y;
+    uint clusterZ = gl_GlobalInvocationID.z;
+    uint countX = uint(uCull.cluster.x + 0.5);
+    uint countY = uint(uCull.cluster.y + 0.5);
+    uint countZ = uint(uCull.cluster.z + 0.5);
+    if (clusterX >= countX || clusterY >= countY || clusterZ >= countZ)
         return;
 
-    uint base = (tileY * tileCountX + tileX) * uint(MAX_LIGHTS + 1);
+    uint row = (clusterZ * countY + clusterY) * countX + clusterX;
     uint count = 0u;
 
-    float tileSize = uCull.tile.z;
-    float minX = float(tileX) * tileSize;
-    float minY = float(tileY) * tileSize;
-    float maxX = min(minX + tileSize, uCull.screen.x);
-    float maxY = min(minY + tileSize, uCull.screen.y);
+    float clusterSize = uCull.cluster.w;
+    float minX = float(clusterX) * clusterSize;
+    float minY = float(clusterY) * clusterSize;
+    float maxX = min(minX + clusterSize, uCull.screen.x);
+    float maxY = min(minY + clusterSize, uCull.screen.y);
+
+    float logScale = uCull.zParams.x;
+    float logBias = uCull.zParams.y;
+    float zNear = uCull.zParams.z;
+    float zFar = uCull.zParams.w;
+    float sliceNear = exp2((float(clusterZ) - logBias) / logScale);
+    float sliceFar = exp2((float(clusterZ) + 1.0 - logBias) / logScale);
+    sliceNear = max(sliceNear, zNear);
+    sliceFar = min(sliceFar, zFar);
 
     int lightCount = int(uLights.lightCount.x);
     for (int i = 0; i < lightCount; ++i)
@@ -53,7 +64,7 @@ void main()
         {
             if (count < uint(MAX_LIGHTS))
             {
-                bLightIndex.data[base + 1u + count] = uint(i);
+                imageStore(lightIndexImage, ivec2(1 + int(count), int(row)), uvec4(uint(i), 0u, 0u, 0u));
                 count += 1u;
             }
             continue;
@@ -66,6 +77,10 @@ void main()
         vec4 viewPos = uCull.view * vec4(pr.xyz, 1.0);
         float z = -viewPos.z;
         if (z <= 0.001)
+            continue;
+        float lightMinZ = z - range;
+        float lightMaxZ = z + range;
+        if (lightMaxZ < sliceNear || lightMinZ > sliceFar)
             continue;
 
         float projScale = max(uCull.proj[0][0], uCull.proj[1][1]);
@@ -86,10 +101,10 @@ void main()
 
         if (count < uint(MAX_LIGHTS))
         {
-            bLightIndex.data[base + 1u + count] = uint(i);
+            imageStore(lightIndexImage, ivec2(1 + int(count), int(row)), uvec4(uint(i), 0u, 0u, 0u));
             count += 1u;
         }
     }
 
-    bLightIndex.data[base] = count;
+    imageStore(lightIndexImage, ivec2(0, int(row)), uvec4(count, 0u, 0u, 0u));
 }
