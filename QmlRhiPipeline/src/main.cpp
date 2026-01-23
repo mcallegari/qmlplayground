@@ -17,6 +17,7 @@
 #include "qml/HazerItem.h"
 #include "qml/RhiQmlItem.h"
 #include "qml/PixelBarItem.h"
+#include "qml/VideoItem.h"
 
 #define RHIPIPELINE_CPP_SCENE_DEMO 0
 
@@ -36,6 +37,7 @@ int main(int argc, char **argv)
     qmlRegisterType<StaticLightItem>("RhiQmlItem", 1, 0, "StaticLight");
     qmlRegisterType<PixelBarItem>("RhiQmlItem", 1, 0, "PixelBar");
     qmlRegisterType<BeamBarItem>("RhiQmlItem", 1, 0, "BeamBar");
+    qmlRegisterType<VideoItem>("RhiQmlItem", 1, 0, "VideoItem");
 
     QQmlApplicationEngine engine;
     QUrl url(QStringLiteral("qrc:/qml/Main.qml"));

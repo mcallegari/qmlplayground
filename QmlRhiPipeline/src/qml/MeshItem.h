@@ -22,7 +22,8 @@ public:
         Cube,
         Sphere,
         PixelBar,
-        BeamBar
+        BeamBar,
+        Video
     };
     Q_ENUM(MeshType)
 

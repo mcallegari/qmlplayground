@@ -3,6 +3,7 @@ import QtQuick.Layouts
 import QtQuick.Controls 
 import QtQuick.Dialogs 
 import QtQml
+import QtMultimedia
 import RhiQmlItem 1.0
 
 Rectangle {
@@ -30,6 +31,8 @@ Rectangle {
     function itemKind(obj) {
         if (!obj)
             return "None"
+        if (hasProp(obj, "ledColumns") || hasProp(obj, "ledRows"))
+            return "Video"
         if (hasProp(obj, "pan") && hasProp(obj, "tilt"))
             return "MovingHeadLight"
         if (hasProp(obj, "zoom"))
@@ -99,6 +102,25 @@ Rectangle {
             return asString
         }
         return ""
+    }
+
+    function pathToFileUrl(path) {
+        if (!path || typeof path !== "string")
+            return ""
+        if (path.indexOf("file:") === 0)
+            return path
+        return "file://" + path
+    }
+
+    function addVideoItem(videoPath) {
+        if (!renderer)
+            return
+        var obj = Qt.createQmlObject('import RhiQmlItem 1.0; VideoItem {}', renderer, "videoFactory")
+        obj.position = spawnPosition
+        var player = Qt.createQmlObject('import QtMultimedia; MediaPlayer {}', obj, "videoPlayer")
+        player.source = pathToFileUrl(videoPath)
+        player.play()
+        obj.player = player
     }
 
     function removeSelected() {
@@ -206,6 +228,17 @@ Rectangle {
     }
 
     FileDialog {
+        id: videoDialog
+        title: "Select video"
+        nameFilters: ["Videos (*.mp4 *.mov *.mkv *.avi)", "All Files (*)"]
+        onAccepted: {
+            var path = dialogToPath(selectedFile)
+            if (path && path.length > 0)
+                panel.addVideoItem(path)
+        }
+    }
+
+    FileDialog {
         id: goboDialog
         title: "Select gobo"
         nameFilters: ["Gobo SVG (*.svg)", "All Files (*)"]
@@ -266,7 +299,7 @@ Rectangle {
                 ComboBox {
                     id: addTypeCombo
                     Layout.fillWidth: true
-                    model: ["Model", "StaticLight", "MovingHeadLight", "Light", "Cube", "Sphere", "PixelBar", "BeamBar"]
+                    model: ["Model", "StaticLight", "MovingHeadLight", "Light", "Cube", "Sphere", "PixelBar", "BeamBar", "VideoItem"]
                     currentIndex: 0
                 }
 
@@ -275,6 +308,8 @@ Rectangle {
                     onClicked: {
                         if (addTypeCombo.currentText === "Model")
                             modelDialog.open()
+                        else if (addTypeCombo.currentText === "VideoItem")
+                            videoDialog.open()
                         else if (addTypeCombo.currentText === "PixelBar" || addTypeCombo.currentText === "BeamBar")
                             panel.addItem(addTypeCombo.currentText, "", panel.emitterCountToAdd)
                         else
@@ -394,6 +429,36 @@ Rectangle {
                         onValueChanged: function() {
                             if (panel.selectedItem && panel.selectedItem.emitterCount !== value)
                                 panel.selectedItem.emitterCount = value
+                        }
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: hasProp(panel.selectedItem, "ledColumns")
+                    Text { text: "LED cols"; color: "#9a9a9a"; Layout.preferredWidth: 70 }
+                    SpinBox {
+                        Layout.fillWidth: true
+                        from: 0
+                        to: 512
+                        value: hasProp(panel.selectedItem, "ledColumns") ? panel.selectedItem.ledColumns : 0
+                        onValueChanged: function() {
+                            if (panel.selectedItem && panel.selectedItem.ledColumns !== value)
+                                panel.selectedItem.ledColumns = value
+                        }
+                    }
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: hasProp(panel.selectedItem, "ledRows")
+                    Text { text: "LED rows"; color: "#9a9a9a"; Layout.preferredWidth: 70 }
+                    SpinBox {
+                        Layout.fillWidth: true
+                        from: 0
+                        to: 512
+                        value: hasProp(panel.selectedItem, "ledRows") ? panel.selectedItem.ledRows : 0
+                        onValueChanged: function() {
+                            if (panel.selectedItem && panel.selectedItem.ledRows !== value)
+                                panel.selectedItem.ledRows = value
                         }
                     }
                 }

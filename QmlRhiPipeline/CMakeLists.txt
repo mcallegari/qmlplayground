@@ -6,7 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Core Gui ShaderTools GuiPrivate Quick Qml Svg QuickControls2)
+find_package(Qt6 REQUIRED COMPONENTS Core Gui ShaderTools GuiPrivate Quick Qml Svg QuickControls2 Multimedia)
 find_package(assimp QUIET)
 
 add_executable(qmlrhipipeline
@@ -29,6 +29,7 @@ add_executable(qmlrhipipeline
     src/qml/RhiQmlItem.cpp
     src/qml/SphereItem.cpp
     src/qml/StaticLightItem.cpp
+    src/qml/VideoItem.cpp
     src/renderer/DeferredRenderer.cpp
     src/renderer/PassDepth.cpp
     src/renderer/PassGBuffer.cpp
@@ -46,7 +47,7 @@ add_executable(qmlrhipipeline
 target_include_directories(qmlrhipipeline PRIVATE src)
 
 target_link_libraries(qmlrhipipeline PRIVATE Qt6::Core Qt6::Gui Qt6::GuiPrivate Qt6::Svg)
-target_link_libraries(qmlrhipipeline PRIVATE Qt6::ShaderTools Qt6::Quick Qt6::Qml Qt6::QuickControls2)
+target_link_libraries(qmlrhipipeline PRIVATE Qt6::ShaderTools Qt6::Quick Qt6::Qml Qt6::QuickControls2 Qt6::Multimedia)
 
 target_compile_definitions(qmlrhipipeline
     PRIVATE FIXTURE_MESH_PATH="${CMAKE_CURRENT_SOURCE_DIR}/models/fixtures"
