@@ -40,11 +40,15 @@ void PassGBuffer::execute(FrameContext &ctx)
         QVector4D cameraPos;
     } camData;
 
-    const QMatrix4x4 viewProj = ctx.rhi->rhi()->clipSpaceCorrMatrix()
-            * ctx.scene->camera().projectionMatrix()
-            * ctx.scene->camera().viewMatrix();
-    std::memcpy(camData.viewProj, viewProj.constData(), sizeof(camData.viewProj));
-    camData.cameraPos = QVector4D(ctx.scene->camera().position(), 1.0f);
+    const bool cameraDirty = ctx.scene && ctx.scene->cameraDirty();
+    if (cameraDirty)
+    {
+        const QMatrix4x4 viewProj = ctx.rhi->rhi()->clipSpaceCorrMatrix()
+                * ctx.scene->camera().projectionMatrix()
+                * ctx.scene->camera().viewMatrix();
+        std::memcpy(camData.viewProj, viewProj.constData(), sizeof(camData.viewProj));
+        camData.cameraPos = QVector4D(ctx.scene->camera().position(), 1.0f);
+    }
 
     static bool s_dumped = false;
     if (!s_dumped)
@@ -93,7 +97,8 @@ void PassGBuffer::execute(FrameContext &ctx)
     };
 
     QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
-    u->updateDynamicBuffer(m_cameraUbo, 0, sizeof(CameraData), &camData);
+    if (cameraDirty)
+        u->updateDynamicBuffer(m_cameraUbo, 0, sizeof(CameraData), &camData);
 
     for (Mesh &mesh : ctx.scene->meshes())
     {
@@ -108,17 +113,24 @@ void PassGBuffer::execute(FrameContext &ctx)
         QMatrix4x4 normalMatrix = model.inverted();
         normalMatrix = normalMatrix.transposed();
 
-        ModelData modelData;
-        std::memcpy(modelData.model, model.constData(), sizeof(modelData.model));
-        std::memcpy(modelData.normalMatrix, normalMatrix.constData(), sizeof(modelData.normalMatrix));
+        if (mesh.modelDirty)
+        {
+            ModelData modelData;
+            std::memcpy(modelData.model, model.constData(), sizeof(modelData.model));
+            std::memcpy(modelData.normalMatrix, normalMatrix.constData(), sizeof(modelData.normalMatrix));
+            u->updateDynamicBuffer(mesh.modelUbo, 0, sizeof(ModelData), &modelData);
+            mesh.modelDirty = false;
+        }
 
-        MaterialData matData;
-        matData.baseColorMetal = QVector4D(mesh.material.baseColor, mesh.material.metalness);
-        matData.roughnessOcclusion = QVector4D(mesh.material.roughness, mesh.material.occlusion, 0.0f, 0.0f);
-        matData.emissive = QVector4D(mesh.material.emissive, 0.0f);
-
-        u->updateDynamicBuffer(mesh.modelUbo, 0, sizeof(ModelData), &modelData);
-        u->updateDynamicBuffer(mesh.materialUbo, 0, sizeof(MaterialData), &matData);
+        if (mesh.materialDirty)
+        {
+            MaterialData matData;
+            matData.baseColorMetal = QVector4D(mesh.material.baseColor, mesh.material.metalness);
+            matData.roughnessOcclusion = QVector4D(mesh.material.roughness, mesh.material.occlusion, 0.0f, 0.0f);
+            matData.emissive = QVector4D(mesh.material.emissive, 0.0f);
+            u->updateDynamicBuffer(mesh.materialUbo, 0, sizeof(MaterialData), &matData);
+            mesh.materialDirty = false;
+        }
     }
 
     cb->resourceUpdate(u);
@@ -160,6 +172,8 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
     delete m_cameraUbo;
     delete m_modelUbo;
     delete m_materialUbo;
+    delete m_videoSampler;
+    m_videoSampler = nullptr;
 
     if (ctx.scene)
     {
@@ -167,6 +181,7 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
         {
             delete mesh.srb;
             mesh.srb = nullptr;
+            mesh.gpuReady = false;
         }
     }
 
@@ -186,6 +201,16 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
                                                      QRhiSampler::Repeat,
                                                      QRhiSampler::Repeat);
         if (!m_linearSampler->create())
+            return;
+    }
+    if (!m_videoSampler)
+    {
+        m_videoSampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Linear,
+                                                    QRhiSampler::Linear,
+                                                    QRhiSampler::None,
+                                                    QRhiSampler::ClampToEdge,
+                                                    QRhiSampler::ClampToEdge);
+        if (!m_videoSampler->create())
             return;
     }
     if (!m_defaultBaseColor)
@@ -267,6 +292,8 @@ void PassGBuffer::ensureMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceU
 {
     if (mesh.vertices.isEmpty() || mesh.indices.isEmpty())
         return;
+    if (mesh.gpuReady)
+        return;
 
     if (!mesh.vertexBuffer || !mesh.indexBuffer)
     {
@@ -347,7 +374,11 @@ void PassGBuffer::ensureMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceU
             mesh.baseColorTexture = m_defaultBaseColor;
     }
     if (!mesh.baseColorSampler)
-        mesh.baseColorSampler = m_linearSampler;
+    {
+        mesh.baseColorSampler = (mesh.name == QLatin1String("VideoQuad") && m_videoSampler)
+                ? m_videoSampler
+                : m_linearSampler;
+    }
     if (!mesh.normalTexture)
     {
         if (!mesh.material.normalMap.isNull())
@@ -417,4 +448,5 @@ void PassGBuffer::ensureMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceU
         if (!mesh.srb->create())
             return;
     }
+    mesh.gpuReady = true;
 }

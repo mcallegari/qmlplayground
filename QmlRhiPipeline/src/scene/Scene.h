@@ -67,12 +67,17 @@ public:
 
     QVector<Light> &lights()
     {
+        m_lightsDirty = true;
         return m_lights;
     }
     const QVector<Light> &lights() const
     {
         return m_lights;
     }
+    bool setLights(const QVector<Light> &lights);
+    void markLightsDirty() { m_lightsDirty = true; }
+    bool lightsDirty() const { return m_lightsDirty; }
+    void clearLightsDirty() { m_lightsDirty = false; }
 
     QVector3D ambientLight() const
     {
@@ -80,7 +85,10 @@ public:
     }
     void setAmbientLight(const QVector3D &ambient)
     {
+        if (m_ambientLight == ambient)
+            return;
         m_ambientLight = ambient;
+        m_lightParamsDirty = true;
     }
     float ambientIntensity() const
     {
@@ -88,7 +96,10 @@ public:
     }
     void setAmbientIntensity(float intensity)
     {
+        if (m_ambientIntensity == intensity)
+            return;
         m_ambientIntensity = intensity;
+        m_lightParamsDirty = true;
     }
     float smokeAmount() const
     {
@@ -96,7 +107,10 @@ public:
     }
     void setSmokeAmount(float amount)
     {
+        if (m_smokeAmount == amount)
+            return;
         m_smokeAmount = amount;
+        m_lightParamsDirty = true;
     }
     BeamModel beamModel() const
     {
@@ -104,7 +118,10 @@ public:
     }
     void setBeamModel(BeamModel mode)
     {
+        if (m_beamModel == mode)
+            return;
         m_beamModel = mode;
+        m_lightParamsDirty = true;
     }
     QVector3D hazePosition() const
     {
@@ -112,6 +129,8 @@ public:
     }
     void setHazePosition(const QVector3D &position)
     {
+        if (m_hazePosition == position)
+            return;
         m_hazePosition = position;
     }
     QVector3D hazeDirection() const
@@ -120,6 +139,8 @@ public:
     }
     void setHazeDirection(const QVector3D &direction)
     {
+        if (m_hazeDirection == direction)
+            return;
         m_hazeDirection = direction;
     }
     float hazeLength() const
@@ -128,6 +149,8 @@ public:
     }
     void setHazeLength(float length)
     {
+        if (m_hazeLength == length)
+            return;
         m_hazeLength = length;
     }
     float hazeRadius() const
@@ -136,6 +159,8 @@ public:
     }
     void setHazeRadius(float radius)
     {
+        if (m_hazeRadius == radius)
+            return;
         m_hazeRadius = radius;
     }
     float hazeDensity() const
@@ -144,6 +169,8 @@ public:
     }
     void setHazeDensity(float density)
     {
+        if (m_hazeDensity == density)
+            return;
         m_hazeDensity = density;
     }
     bool hazeEnabled() const
@@ -152,6 +179,8 @@ public:
     }
     void setHazeEnabled(bool enabled)
     {
+        if (m_hazeEnabled == enabled)
+            return;
         m_hazeEnabled = enabled;
     }
     float bloomIntensity() const
@@ -160,7 +189,10 @@ public:
     }
     void setBloomIntensity(float intensity)
     {
+        if (m_bloomIntensity == intensity)
+            return;
         m_bloomIntensity = intensity;
+        m_lightParamsDirty = true;
     }
     float bloomRadius() const
     {
@@ -168,7 +200,10 @@ public:
     }
     void setBloomRadius(float radius)
     {
+        if (m_bloomRadius == radius)
+            return;
         m_bloomRadius = radius;
+        m_lightParamsDirty = true;
     }
     bool volumetricEnabled() const
     {
@@ -176,7 +211,10 @@ public:
     }
     void setVolumetricEnabled(bool enabled)
     {
+        if (m_volumetricEnabled == enabled)
+            return;
         m_volumetricEnabled = enabled;
+        m_lightParamsDirty = true;
     }
     bool shadowsEnabled() const
     {
@@ -184,7 +222,10 @@ public:
     }
     void setShadowsEnabled(bool enabled)
     {
+        if (m_shadowsEnabled == enabled)
+            return;
         m_shadowsEnabled = enabled;
+        m_lightParamsDirty = true;
     }
     bool smokeNoiseEnabled() const
     {
@@ -192,7 +233,10 @@ public:
     }
     void setSmokeNoiseEnabled(bool enabled)
     {
+        if (m_smokeNoiseEnabled == enabled)
+            return;
         m_smokeNoiseEnabled = enabled;
+        m_lightParamsDirty = true;
     }
     float timeSeconds() const
     {
@@ -200,7 +244,32 @@ public:
     }
     void setTimeSeconds(float seconds)
     {
+        if (m_timeSeconds == seconds)
+            return;
         m_timeSeconds = seconds;
+        m_timeDirty = true;
+    }
+
+    bool cameraDirty() const { return m_cameraDirty || m_camera.isDirty(); }
+    void clearCameraDirty()
+    {
+        m_cameraDirty = false;
+        m_camera.clearDirty();
+    }
+    bool timeDirty() const { return m_timeDirty; }
+    void clearTimeDirty() { m_timeDirty = false; }
+    bool lightParamsDirty() const { return m_lightParamsDirty; }
+    void clearLightParamsDirty() { m_lightParamsDirty = false; }
+    bool selectionDirty() const { return m_selectionDirty; }
+    void markSelectionDirty() { m_selectionDirty = true; }
+    void clearSelectionDirty() { m_selectionDirty = false; }
+    void clearFrameDirty()
+    {
+        clearLightsDirty();
+        clearLightParamsDirty();
+        clearCameraDirty();
+        clearTimeDirty();
+        clearSelectionDirty();
     }
 
 private:
@@ -223,4 +292,9 @@ private:
     float m_hazeRadius = 1.0f;
     float m_hazeDensity = 0.0f;
     bool m_hazeEnabled = false;
+    bool m_lightsDirty = true;
+    bool m_lightParamsDirty = true;
+    bool m_cameraDirty = true;
+    bool m_timeDirty = true;
+    bool m_selectionDirty = true;
 };

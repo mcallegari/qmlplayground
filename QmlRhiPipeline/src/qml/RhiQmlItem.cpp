@@ -13,8 +13,10 @@
 #include <QtGui/QMouseEvent>
 #include <QtGui/QQuaternion>
 #include <QtGui/QKeyEvent>
+#include <QtGui/QImage>
 #include <QtCore/QHash>
 #include <QtCore/QSet>
+#include <rhi/qrhi.h>
 
 #include "core/RhiContext.h"
 #include "core/RenderTargetCache.h"
@@ -31,6 +33,7 @@
 #include "qml/SphereItem.h"
 #include "qml/PixelBarItem.h"
 #include "qml/BeamBarItem.h"
+#include "qml/VideoItem.h"
 #include "qml/MeshItem.h"
 #include "qml/MeshUtils.h"
 #include "qml/PickingUtils.h"
@@ -68,6 +71,10 @@ struct MeshRecord
     bool castShadows = false;
     QVector<QVector3D> emitterColors;
     QVector<float> emitterIntensities;
+    QImage videoFrame;
+    QSize videoSize;
+    QRhiTexture *videoTexture = nullptr;
+    bool videoDirty = false;
     bool selected = false;
     bool selectable = true;
     bool visible = true;
@@ -176,6 +183,10 @@ static void applyTransform(QVector<Mesh> &meshes,
             mesh.baseModelMatrix = mesh.modelMatrix;
         mesh.modelMatrix = transform.matrix * mesh.baseModelMatrix;
         mesh.userOffset = position;
+        mesh.modelDirty = true;
+        mesh.worldBoundsDirty = true;
+        if (mesh.selected)
+            mesh.selectionDirty = true;
     }
 }
 
@@ -221,9 +232,14 @@ static void applySelectionVisibility(QVector<Mesh> &meshes,
     for (int i = firstMesh; i < firstMesh + meshCount; ++i)
     {
         Mesh &mesh = meshes[i];
+        const bool changed = mesh.selected != selected
+                || mesh.selectable != selectable
+                || mesh.visible != visible;
         mesh.selected = selected;
         mesh.selectable = selectable;
         mesh.visible = visible;
+        if (changed)
+            mesh.selectionDirty = true;
     }
 }
 
@@ -235,7 +251,11 @@ static void applySelectionGroup(QVector<Mesh> &meshes,
     for (int i = firstMesh; i < firstMesh + meshCount; ++i)
     {
         Mesh &mesh = meshes[i];
-        mesh.selectionGroup = groupId;
+        if (mesh.selectionGroup != groupId)
+        {
+            mesh.selectionGroup = groupId;
+            mesh.selectionDirty = true;
+        }
     }
 }
 
@@ -250,6 +270,13 @@ static void applyMaterial(QVector<Mesh> &meshes,
     for (int i = firstMesh; i < firstMesh + meshCount; ++i)
     {
         Mesh &mesh = meshes[i];
+        if (mesh.material.baseColor != baseColor
+                || mesh.material.emissive != emissiveColor
+                || mesh.material.metalness != metalness
+                || mesh.material.roughness != roughness)
+        {
+            mesh.materialDirty = true;
+        }
         mesh.material.baseColor = baseColor;
         mesh.material.emissive = emissiveColor;
         mesh.material.metalness = metalness;
@@ -379,6 +406,9 @@ static void applyPixelBarLayout(MeshRecord &record, QVector<Mesh> &meshes)
     body.userOffset = record.position;
     body.material.baseColor = record.baseColor;
     body.material.emissive = QVector3D(0.0f, 0.0f, 0.0f);
+    body.materialDirty = true;
+    body.modelDirty = true;
+    body.worldBoundsDirty = true;
 
     const float segment = emitterCount > 0 ? (length / emitterCount) : length;
     const float emitterX = segment * 0.8f;
@@ -400,6 +430,9 @@ static void applyPixelBarLayout(MeshRecord &record, QVector<Mesh> &meshes)
         mesh.userOffset = record.position;
         mesh.material.baseColor = color;
         mesh.material.emissive = emissive;
+        mesh.materialDirty = true;
+        mesh.modelDirty = true;
+        mesh.worldBoundsDirty = true;
     }
 
     for (int i = record.firstMesh + 1 + emitterCount; i < record.firstMesh + record.meshCount; ++i)
@@ -413,6 +446,9 @@ static void applyPixelBarLayout(MeshRecord &record, QVector<Mesh> &meshes)
         mesh.visible = false;
         mesh.selectable = false;
         mesh.selected = false;
+        mesh.modelDirty = true;
+        mesh.worldBoundsDirty = true;
+        mesh.selectionDirty = true;
     }
 }
 
@@ -431,6 +467,9 @@ static void applyBeamBarBody(MeshRecord &record, QVector<Mesh> &meshes)
     body.userOffset = record.position;
     body.material.baseColor = record.baseColor;
     body.material.emissive = QVector3D(0.0f, 0.0f, 0.0f);
+    body.materialDirty = true;
+    body.modelDirty = true;
+    body.worldBoundsDirty = true;
 }
 
 template <typename RecordT>
@@ -489,6 +528,10 @@ static void applyMovingHeadTransforms(RecordT &record,
             local = tiltMatrix * (panMatrix * local);
         mesh.modelMatrix = transform.matrix * local;
         mesh.userOffset = position;
+        mesh.modelDirty = true;
+        mesh.worldBoundsDirty = true;
+        if (mesh.selected)
+            mesh.selectionDirty = true;
     }
 }
 
@@ -526,10 +569,15 @@ static void pruneMissingRecords(QVector<MeshRecord> &records,
 
     for (int i = records.size() - 1; i >= 0; --i)
     {
-        const auto &record = records[i];
+        auto &record = records[i];
         if (live.contains(record.item))
             continue;
         applySelectionVisibility(meshes, record.firstMesh, record.meshCount, false, false, false);
+        if (record.videoTexture)
+        {
+            delete record.videoTexture;
+            record.videoTexture = nullptr;
+        }
         records.removeAt(i);
     }
 }
@@ -602,6 +650,8 @@ public:
                     transform.scale(entry.scale);
                 mesh.modelMatrix = transform * mesh.baseModelMatrix;
                 mesh.userOffset = entry.position;
+                mesh.modelDirty = true;
+                mesh.worldBoundsDirty = true;
                 if (!mesh.vertices.isEmpty())
                 {
                     QVector3D minV(mesh.vertices[0].px, mesh.vertices[0].py, mesh.vertices[0].pz);
@@ -780,6 +830,34 @@ public:
                     }
                     syncSelectionVisibilityFromItem(*record, meshItem, m_scene.meshes());
                 }
+                else if (type == MeshItem::MeshType::Video)
+                {
+                    VideoItem *videoItem = qobject_cast<VideoItem *>(meshItem);
+                    if (!videoItem)
+                        continue;
+                    syncTransformFromItem(*record, meshItem, m_scene.meshes());
+                    syncSelectionVisibilityFromItem(*record, meshItem, m_scene.meshes());
+                    const QVector3D baseColor(1.0f, 1.0f, 1.0f);
+                    const QVector3D emissive(1.0f, 1.0f, 1.0f);
+                    if (record->baseColor != baseColor || record->emissiveColor != emissive
+                            || !qFuzzyCompare(record->metalness, 0.0f)
+                            || !qFuzzyCompare(record->roughness, 1.0f))
+                    {
+                        record->baseColor = baseColor;
+                        record->emissiveColor = emissive;
+                        record->metalness = 0.0f;
+                        record->roughness = 1.0f;
+                        applyMaterial(m_scene.meshes(), record->firstMesh, record->meshCount,
+                                      record->baseColor, record->emissiveColor,
+                                      record->metalness, record->roughness);
+                    }
+                    QImage frame;
+                    if (videoItem->takeFrame(frame))
+                    {
+                        record->videoFrame = frame;
+                        record->videoDirty = true;
+                    }
+                }
                 else if (type == MeshItem::MeshType::PixelBar)
                 {
                     const PixelBarItem *pixelBar = static_cast<const PixelBarItem *>(meshItem);
@@ -881,6 +959,12 @@ public:
                 m_scene.meshes().push_back(createUnitCubeMesh());
                 created = true;
             }
+            else if (type == MeshItem::MeshType::Video)
+            {
+                m_scene.meshes().push_back(createUnitQuadMesh());
+                m_scene.meshes().last().name = QStringLiteral("VideoQuad");
+                created = true;
+            }
 
             if (!created)
                 continue;
@@ -925,7 +1009,8 @@ public:
                 const bool useCommonTransform = (type == MeshItem::MeshType::Model
                                                  || type == MeshItem::MeshType::StaticLight
                                                  || type == MeshItem::MeshType::Cube
-                                                 || type == MeshItem::MeshType::Sphere);
+                                                 || type == MeshItem::MeshType::Sphere
+                                                 || type == MeshItem::MeshType::Video);
                 if (useCommonTransform)
                     transform = applyCommonRecordTransforms(newRecord, m_scene.meshes(), true);
                 if (type == MeshItem::MeshType::StaticLight)
@@ -960,6 +1045,26 @@ public:
                     applyMaterial(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount,
                                   newRecord.baseColor, newRecord.emissiveColor,
                                   newRecord.metalness, newRecord.roughness);
+                }
+                else if (type == MeshItem::MeshType::Video)
+                {
+                    VideoItem *videoItem = qobject_cast<VideoItem *>(meshItem);
+                    if (videoItem)
+                    {
+                        newRecord.baseColor = QVector3D(1.0f, 1.0f, 1.0f);
+                        newRecord.emissiveColor = QVector3D(1.0f, 1.0f, 1.0f);
+                        newRecord.metalness = 0.0f;
+                        newRecord.roughness = 1.0f;
+                        applyMaterial(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount,
+                                      newRecord.baseColor, newRecord.emissiveColor,
+                                      newRecord.metalness, newRecord.roughness);
+                        QImage frame;
+                        if (videoItem->takeFrame(frame))
+                        {
+                            newRecord.videoFrame = frame;
+                            newRecord.videoDirty = true;
+                        }
+                    }
                 }
                 else if (type == MeshItem::MeshType::PixelBar)
                 {
@@ -1020,8 +1125,9 @@ public:
 
         qmlItem->updateSelectableItems(selectableItems);
 
-        m_scene.lights().clear();
-        m_scene.lights() = m_staticLights;
+        QVector<Light> newLights;
+        newLights.reserve(m_staticLights.size() + staticLightItemTransforms.size());
+        newLights = m_staticLights;
         QVector3D ambientTotal = qmlItem->ambientLight() * qmlItem->ambientIntensity();
         for (auto it = staticLightItemTransforms.cbegin(); it != staticLightItemTransforms.cend(); ++it)
         {
@@ -1037,7 +1143,7 @@ public:
                         light.direction = emitter.direction.normalized();
                     if (emitter.diameter > 0.0f)
                         light.beamRadius = emitter.diameter * 0.5f;
-                    m_scene.lights().push_back(light);
+                    newLights.push_back(light);
                 }
                 continue;
             }
@@ -1047,7 +1153,7 @@ public:
             light.position = worldPos.toVector3D();
             if (!light.direction.isNull())
                 light.direction = it.value().rotation.rotatedVector(light.direction).normalized();
-            m_scene.lights().push_back(light);
+            newLights.push_back(light);
         }
         for (auto it = movingHeadEmitters.cbegin(); it != movingHeadEmitters.cend(); ++it)
         {
@@ -1063,14 +1169,14 @@ public:
                     light.direction = emitter.direction.normalized();
                 if (emitter.diameter > 0.0f)
                     light.beamRadius = emitter.diameter * 0.5f;
-                m_scene.lights().push_back(light);
+                newLights.push_back(light);
             }
         }
         for (auto it = beamBarLights.cbegin(); it != beamBarLights.cend(); ++it)
         {
             const QVector<Light> lights = it.value();
             for (const Light &light : lights)
-                m_scene.lights().push_back(light);
+                newLights.push_back(light);
         }
         const auto qmlLights = qmlItem->findChildren<LightItem *>(QString(), Qt::FindChildrenRecursively);
         for (const LightItem *lightItem : qmlLights)
@@ -1089,8 +1195,9 @@ public:
                 if (!light.direction.isNull())
                     light.direction = it->rotation.rotatedVector(light.direction).normalized();
             }
-            m_scene.lights().push_back(light);
+            newLights.push_back(light);
         }
+        m_scene.setLights(newLights);
 
         const QSize size = qmlItem->effectiveColorBufferSize();
         const float aspect = size.height() > 0 ? float(size.width()) / float(size.height()) : 1.0f;
@@ -1309,11 +1416,71 @@ public:
         }
 
         m_rhiContext.setExternalFrame(cb, rt);
+        uploadVideoFrames(cb);
         m_renderer.render(&m_scene);
         m_rhiContext.clearExternalFrame();
     }
 
 private:
+    void uploadVideoFrames(QRhiCommandBuffer *cb)
+    {
+        if (!cb)
+            return;
+        QRhiResourceUpdateBatch *u = nullptr;
+        for (MeshRecord &record : m_qmlMeshes)
+        {
+            if (record.type != MeshItem::MeshType::Video || !record.videoDirty)
+                continue;
+            if (record.firstMesh < 0 || record.firstMesh >= m_scene.meshes().size())
+            {
+                record.videoDirty = false;
+                record.videoFrame = QImage();
+                continue;
+            }
+            QImage frame = record.videoFrame;
+            record.videoFrame = QImage();
+            record.videoDirty = false;
+            if (frame.isNull())
+                continue;
+            if (frame.format() != QImage::Format_RGBA8888)
+                frame = frame.convertToFormat(QImage::Format_RGBA8888);
+            if (!record.videoTexture || record.videoSize != frame.size())
+            {
+                if (record.videoTexture)
+                {
+                    delete record.videoTexture;
+                    record.videoTexture = nullptr;
+                }
+                record.videoTexture = rhi()->newTexture(QRhiTexture::RGBA8, frame.size(), 1);
+                if (!record.videoTexture || !record.videoTexture->create())
+                {
+                    delete record.videoTexture;
+                    record.videoTexture = nullptr;
+                    continue;
+                }
+                record.videoSize = frame.size();
+                Mesh &mesh = m_scene.meshes()[record.firstMesh];
+                if (mesh.baseColorTexture != record.videoTexture)
+                {
+                    mesh.baseColorTexture = record.videoTexture;
+                    if (mesh.srb)
+                    {
+                        delete mesh.srb;
+                        mesh.srb = nullptr;
+                    }
+                    mesh.gpuReady = false;
+                }
+            }
+            if (!u)
+                u = rhi()->nextResourceUpdateBatch();
+            QRhiTextureUploadDescription upload(QRhiTextureUploadEntry(
+                0, 0, QRhiTextureSubresourceUploadDescription(frame)));
+            u->uploadTexture(record.videoTexture, upload);
+        }
+        if (u)
+            cb->resourceUpdate(u);
+    }
+
     bool m_initialized = false;
     RhiContext m_rhiContext;
     std::unique_ptr<RenderTargetCache> m_targets;
@@ -1516,6 +1683,8 @@ private:
                 hidden.setToIdentity();
                 hidden.scale(0.0f);
                 mesh.modelMatrix = hidden;
+                mesh.modelDirty = true;
+                mesh.worldBoundsDirty = true;
                 continue;
             }
 
@@ -1532,6 +1701,8 @@ private:
                 else
                     shaftM.scale(shaftRadius, shaftRadius, axisLength);
                 mesh.modelMatrix = shaftM;
+                mesh.modelDirty = true;
+                mesh.worldBoundsDirty = true;
             }
             else if (part.type == 1)
             {
@@ -1539,6 +1710,8 @@ private:
                 headM.translate(pos + dir * (axisLength + headSize * 0.5f));
                 headM.scale(headSize, headSize, headSize);
                 mesh.modelMatrix = headM;
+                mesh.modelDirty = true;
+                mesh.worldBoundsDirty = true;
             }
             else
             {
@@ -1566,6 +1739,8 @@ private:
                 arcM.setColumn(2, QVector4D(axisDir * arcScale, 0.0f));
                 arcM.setColumn(3, QVector4D(pos, 1.0f));
                 mesh.modelMatrix = arcM;
+                mesh.modelDirty = true;
+                mesh.worldBoundsDirty = true;
             }
         }
     }

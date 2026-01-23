@@ -97,6 +97,19 @@ static QImage loadGoboImage(const QString &path, const QSize &size)
     return image;
 }
 
+QImage PassLighting::loadGoboCached(const QString &path)
+{
+    if (path.isEmpty())
+        return QImage();
+    const QString resolved = resolveGoboPath(path);
+    const auto it = m_goboCache.constFind(resolved);
+    if (it != m_goboCache.constEnd())
+        return it.value();
+    const QImage image = loadGoboImage(resolved, m_spotGoboSize);
+    m_goboCache.insert(resolved, image);
+    return image;
+}
+
 void PassLighting::prepare(FrameContext &ctx)
 {
     if (qEnvironmentVariableIsSet("RHIPIPELINE_SKIP_LIGHTING"))
@@ -120,7 +133,9 @@ void PassLighting::updateGoboTextures(FrameContext &ctx, QRhiResourceUpdateBatch
         if (!m_spotGoboPaths[i].isNull() && path == m_spotGoboPaths[i])
             continue;
         m_spotGoboPaths[i] = path;
-        const QImage image = loadGoboImage(path, m_spotGoboSize);
+        QImage image = loadGoboCached(path);
+        if (image.isNull())
+            image = loadGoboImage(QString(), m_spotGoboSize);
         entries.push_back(QRhiTextureUploadEntry(i, 0, QRhiTextureSubresourceUploadDescription(image)));
     }
     if (entries.isEmpty())
@@ -145,6 +160,7 @@ void PassLighting::execute(FrameContext &ctx)
     if (!rt)
         return;
 
+    const bool lightDataDirty = ctx.scene->lightsDirty() || ctx.scene->lightParamsDirty();
     struct LightsData
     {
         QVector4D lightCount;
@@ -156,58 +172,64 @@ void PassLighting::execute(FrameContext &ctx)
         QVector4D dirInner[kMaxLights];
         QVector4D other[kMaxLights];
     } lightData;
-    memset(&lightData, 0, sizeof(LightsData));
-
-    const int maxLights = qMin(kMaxLights, ctx.scene->lights().size());
-    const QVector3D ambient = ctx.scene->ambientLight() * ctx.scene->ambientIntensity();
-    lightData.lightCount = QVector4D(float(maxLights), ambient.x(), ambient.y(), ambient.z());
-    lightData.lightParams = QVector4D(ctx.scene->smokeAmount(),
-                                      float(static_cast<int>(ctx.scene->beamModel())),
-                                      ctx.scene->bloomIntensity(),
-                                      ctx.scene->bloomRadius());
-    lightData.lightFlags = QVector4D(ctx.scene->volumetricEnabled() ? 1.0f : 0.0f,
-                                     ctx.scene->smokeNoiseEnabled() ? 1.0f : 0.0f,
-                                     ctx.scene->shadowsEnabled() ? 1.0f : 0.0f,
-                                     0.0f);
-    for (int i = 0; i < maxLights; ++i)
+    if (lightDataDirty)
     {
-        const Light &l = ctx.scene->lights()[i];
-        const QVector3D dir = l.direction.normalized();
-        lightData.posRange[i] = QVector4D(l.position, l.range);
-        lightData.colorIntensity[i] = QVector4D(l.color, l.intensity);
-        lightData.dirInner[i] = QVector4D(dir, qCos(l.innerCone));
-        lightData.lightBeam[i] = QVector4D(l.beamRadius, float(l.beamShape), 0.0f, 0.0f);
-        float extraZ = 0.0f;
-        float extraW = 0.0f;
-        if (l.type == Light::Type::Area)
+        memset(&lightData, 0, sizeof(LightsData));
+        const int maxLights = qMin(kMaxLights, ctx.scene->lights().size());
+        const QVector3D ambient = ctx.scene->ambientLight() * ctx.scene->ambientIntensity();
+        lightData.lightCount = QVector4D(float(maxLights), ambient.x(), ambient.y(), ambient.z());
+        lightData.lightParams = QVector4D(ctx.scene->smokeAmount(),
+                                          float(static_cast<int>(ctx.scene->beamModel())),
+                                          ctx.scene->bloomIntensity(),
+                                          ctx.scene->bloomRadius());
+        lightData.lightFlags = QVector4D(ctx.scene->volumetricEnabled() ? 1.0f : 0.0f,
+                                         ctx.scene->smokeNoiseEnabled() ? 1.0f : 0.0f,
+                                         ctx.scene->shadowsEnabled() ? 1.0f : 0.0f,
+                                         0.0f);
+        for (int i = 0; i < maxLights; ++i)
         {
-            extraZ = l.areaSize.x();
-            extraW = l.areaSize.y();
-        } else if (l.type == Light::Type::Spot)
-        {
-            extraZ = l.goboPath.isEmpty() ? -1.0f : float(i);
-            extraW = float(l.qualitySteps);
+            const Light &l = ctx.scene->lights()[i];
+            const QVector3D dir = l.direction.normalized();
+            lightData.posRange[i] = QVector4D(l.position, l.range);
+            lightData.colorIntensity[i] = QVector4D(l.color, l.intensity);
+            lightData.dirInner[i] = QVector4D(dir, qCos(l.innerCone));
+            lightData.lightBeam[i] = QVector4D(l.beamRadius, float(l.beamShape), 0.0f, 0.0f);
+            float extraZ = 0.0f;
+            float extraW = 0.0f;
+            if (l.type == Light::Type::Area)
+            {
+                extraZ = l.areaSize.x();
+                extraW = l.areaSize.y();
+            } else if (l.type == Light::Type::Spot)
+            {
+                extraZ = l.goboPath.isEmpty() ? -1.0f : float(i);
+                extraW = float(l.qualitySteps);
+            }
+            lightData.other[i] = QVector4D(qCos(l.outerCone),
+                                           float(l.type),
+                                           extraZ,
+                                           extraW);
         }
-        lightData.other[i] = QVector4D(qCos(l.outerCone),
-                                       float(l.type),
-                                       extraZ,
-                                       extraW);
     }
 
+    const bool cameraDirty = ctx.scene->cameraDirty() || ctx.scene->timeDirty();
     struct CameraData
     {
         float view[16];
         float invViewProj[16];
         QVector4D cameraPos;
     } camData;
-    const QMatrix4x4 view = ctx.scene->camera().viewMatrix();
-    const QMatrix4x4 viewProj = ctx.rhi->rhi()->clipSpaceCorrMatrix()
-            * ctx.scene->camera().projectionMatrix()
-            * ctx.scene->camera().viewMatrix();
-    const QMatrix4x4 invViewProj = viewProj.inverted();
-    std::memcpy(camData.view, view.constData(), sizeof(camData.view));
-    std::memcpy(camData.invViewProj, invViewProj.constData(), sizeof(camData.invViewProj));
-    camData.cameraPos = QVector4D(ctx.scene->camera().position(), ctx.scene->timeSeconds());
+    if (cameraDirty)
+    {
+        const QMatrix4x4 view = ctx.scene->camera().viewMatrix();
+        const QMatrix4x4 viewProj = ctx.rhi->rhi()->clipSpaceCorrMatrix()
+                * ctx.scene->camera().projectionMatrix()
+                * ctx.scene->camera().viewMatrix();
+        const QMatrix4x4 invViewProj = viewProj.inverted();
+        std::memcpy(camData.view, view.constData(), sizeof(camData.view));
+        std::memcpy(camData.invViewProj, invViewProj.constData(), sizeof(camData.invViewProj));
+        camData.cameraPos = QVector4D(ctx.scene->camera().position(), ctx.scene->timeSeconds());
+    }
 
     struct ShadowDataGpu
     {
@@ -275,13 +297,19 @@ void PassLighting::execute(FrameContext &ctx)
     QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
     if (m_lightsUbo)
     {
-        if (ctx.rhi->rhi()->backend() == QRhi::D3D11)
-            u->updateDynamicBuffer(m_lightsUbo, 0, sizeof(LightsData), &lightData);
-        else
-            u->uploadStaticBuffer(m_lightsUbo, 0, sizeof(LightsData), &lightData);
+        if (lightDataDirty)
+        {
+            if (ctx.rhi->rhi()->backend() == QRhi::D3D11)
+                u->updateDynamicBuffer(m_lightsUbo, 0, sizeof(LightsData), &lightData);
+            else
+                u->uploadStaticBuffer(m_lightsUbo, 0, sizeof(LightsData), &lightData);
+        }
     }
     if (m_cameraUbo)
-        u->updateDynamicBuffer(m_cameraUbo, 0, sizeof(CameraData), &camData);
+    {
+        if (cameraDirty)
+            u->updateDynamicBuffer(m_cameraUbo, 0, sizeof(CameraData), &camData);
+    }
     if (m_shadowUbo)
     {
         if (ctx.rhi->rhi()->backend() == QRhi::D3D11)
@@ -295,7 +323,11 @@ void PassLighting::execute(FrameContext &ctx)
                              flipNdcY ? 1.0f : 0.0f,
                              0.0f,
                              0.0f);
-    u->updateDynamicBuffer(m_flipUbo, 0, sizeof(flipData), &flipData);
+    if (flipData != m_lastFlip)
+    {
+        u->updateDynamicBuffer(m_flipUbo, 0, sizeof(flipData), &flipData);
+        m_lastFlip = flipData;
+    }
     if (m_useLightCulling && m_lightCullUbo && ctx.lightCulling)
     {
         struct LightCullParams
@@ -318,7 +350,19 @@ void PassLighting::execute(FrameContext &ctx)
                                    ctx.lightCulling->farPlane);
         params.flags = QVector4D(ctx.lightCulling->enabled ? 1.0f : 0.0f,
                                  0.0f, 0.0f, 0.0f);
-        u->updateDynamicBuffer(m_lightCullUbo, 0, sizeof(LightCullParams), &params);
+        if (!m_lightCullParamsValid
+                || params.screen != m_lastLightCullScreen
+                || params.cluster != m_lastLightCullCluster
+                || params.zParams != m_lastLightCullZParams
+                || params.flags != m_lastLightCullFlags)
+        {
+            u->updateDynamicBuffer(m_lightCullUbo, 0, sizeof(LightCullParams), &params);
+            m_lastLightCullScreen = params.screen;
+            m_lastLightCullCluster = params.cluster;
+            m_lastLightCullZParams = params.zParams;
+            m_lastLightCullFlags = params.flags;
+            m_lightCullParamsValid = true;
+        }
     }
     updateGoboTextures(ctx, u);
 
@@ -333,14 +377,17 @@ void PassLighting::execute(FrameContext &ctx)
     cb->draw(3);
 
     bool anySelected = false;
+    bool selectionDirty = !m_selectionCacheValid;
     for (const Mesh &mesh : ctx.scene->meshes())
     {
-        if (mesh.selected && mesh.visible)
-        {
-            anySelected = true;
-            break;
-        }
+        if (!mesh.selected || !mesh.visible)
+            continue;
+        anySelected = true;
+        if (mesh.selectionDirty || mesh.worldBoundsDirty)
+            selectionDirty = true;
     }
+    if (anySelected != m_selectionAnySelected)
+        selectionDirty = true;
 
     if (anySelected)
         ensureSelectionBoxesPipeline(ctx, rt);
@@ -363,7 +410,7 @@ void PassLighting::execute(FrameContext &ctx)
         const auto &meshes = ctx.scene->meshes();
         const int maxVertices = m_selectionMaxVertices > 0 ? m_selectionMaxVertices : 0;
         std::vector<SelectionVertex> vertices;
-        if (maxVertices > 0)
+        if (selectionDirty && maxVertices > 0)
             vertices.reserve(qMin(int(meshes.size()) * 24, maxVertices));
 
         const int edges[12][2] = {
@@ -372,7 +419,7 @@ void PassLighting::execute(FrameContext &ctx)
             {0, 4}, {1, 5}, {2, 6}, {3, 7}
         };
 
-        auto getLocalBounds = [](const Mesh &mesh, QVector3D &minV, QVector3D &maxV) -> bool {
+        auto getLocalBounds = [](Mesh &mesh, QVector3D &minV, QVector3D &maxV) -> bool {
             if (mesh.boundsValid)
             {
                 minV = mesh.boundsMin;
@@ -395,24 +442,11 @@ void PassLighting::execute(FrameContext &ctx)
             return true;
         };
 
-        QHash<int, GroupBounds> boundsByGroup;
-        boundsByGroup.reserve(meshes.size());
-
-        for (int meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
-        {
-            const Mesh &mesh = meshes[meshIndex];
-            if (!mesh.selected)
-                continue;
-            if (!mesh.visible)
-                continue;
+        auto updateWorldBounds = [&](Mesh &mesh) -> bool {
             QVector3D localMin;
             QVector3D localMax;
             if (!getLocalBounds(mesh, localMin, localMax))
-                continue;
-
-            const int groupId = mesh.selectionGroup >= 0 ? mesh.selectionGroup : meshIndex;
-            GroupBounds &group = boundsByGroup[groupId];
-
+                return false;
             QVector3D corners[8] = {
                 { localMin.x(), localMin.y(), localMin.z() },
                 { localMax.x(), localMin.y(), localMin.z() },
@@ -423,57 +457,100 @@ void PassLighting::execute(FrameContext &ctx)
                 { localMax.x(), localMax.y(), localMax.z() },
                 { localMin.x(), localMax.y(), localMax.z() }
             };
-
-            const QMatrix4x4 model = mesh.modelMatrix;
-            for (const QVector3D &corner : corners)
+            QVector3D minV;
+            QVector3D maxV;
+            for (int i = 0; i < 8; ++i)
             {
-                const QVector3D world = (model * QVector4D(corner, 1.0f)).toVector3D();
+                const QVector3D world = (mesh.modelMatrix * QVector4D(corners[i], 1.0f)).toVector3D();
+                if (i == 0)
+                {
+                    minV = world;
+                    maxV = world;
+                }
+                else
+                {
+                    minV.setX(qMin(minV.x(), world.x()));
+                    minV.setY(qMin(minV.y(), world.y()));
+                    minV.setZ(qMin(minV.z(), world.z()));
+                    maxV.setX(qMax(maxV.x(), world.x()));
+                    maxV.setY(qMax(maxV.y(), world.y()));
+                    maxV.setZ(qMax(maxV.z(), world.z()));
+                }
+            }
+            mesh.worldBoundsMin = minV;
+            mesh.worldBoundsMax = maxV;
+            mesh.worldBoundsValid = true;
+            mesh.worldBoundsDirty = false;
+            return true;
+        };
+
+        if (selectionDirty)
+        {
+            QHash<int, GroupBounds> boundsByGroup;
+            boundsByGroup.reserve(meshes.size());
+
+            for (int meshIndex = 0; meshIndex < meshes.size(); ++meshIndex)
+            {
+                Mesh &mesh = const_cast<Mesh &>(meshes[meshIndex]);
+                if (!mesh.selected || !mesh.visible)
+                    continue;
+                if (!mesh.worldBoundsValid || mesh.worldBoundsDirty)
+                {
+                    if (!updateWorldBounds(mesh))
+                        continue;
+                }
+                const int groupId = mesh.selectionGroup >= 0 ? mesh.selectionGroup : meshIndex;
+                GroupBounds &group = boundsByGroup[groupId];
                 if (!group.hasBounds)
                 {
-                    group.minV = world;
-                    group.maxV = world;
+                    group.minV = mesh.worldBoundsMin;
+                    group.maxV = mesh.worldBoundsMax;
                     group.hasBounds = true;
                 }
                 else
                 {
-                    group.minV.setX(qMin(group.minV.x(), world.x()));
-                    group.minV.setY(qMin(group.minV.y(), world.y()));
-                    group.minV.setZ(qMin(group.minV.z(), world.z()));
-                    group.maxV.setX(qMax(group.maxV.x(), world.x()));
-                    group.maxV.setY(qMax(group.maxV.y(), world.y()));
-                    group.maxV.setZ(qMax(group.maxV.z(), world.z()));
+                    group.minV.setX(qMin(group.minV.x(), mesh.worldBoundsMin.x()));
+                    group.minV.setY(qMin(group.minV.y(), mesh.worldBoundsMin.y()));
+                    group.minV.setZ(qMin(group.minV.z(), mesh.worldBoundsMin.z()));
+                    group.maxV.setX(qMax(group.maxV.x(), mesh.worldBoundsMax.x()));
+                    group.maxV.setY(qMax(group.maxV.y(), mesh.worldBoundsMax.y()));
+                    group.maxV.setZ(qMax(group.maxV.z(), mesh.worldBoundsMax.z()));
+                }
+                mesh.selectionDirty = false;
+            }
+
+            for (auto it = boundsByGroup.cbegin(); it != boundsByGroup.cend(); ++it)
+            {
+                if (!it.value().hasBounds)
+                    continue;
+                const QVector3D minV = it.value().minV;
+                const QVector3D maxV = it.value().maxV;
+                const QVector3D corners[8] = {
+                    { minV.x(), minV.y(), minV.z() },
+                    { maxV.x(), minV.y(), minV.z() },
+                    { maxV.x(), maxV.y(), minV.z() },
+                    { minV.x(), maxV.y(), minV.z() },
+                    { minV.x(), minV.y(), maxV.z() },
+                    { maxV.x(), minV.y(), maxV.z() },
+                    { maxV.x(), maxV.y(), maxV.z() },
+                    { minV.x(), maxV.y(), maxV.z() }
+                };
+                for (const auto &edge : edges)
+                {
+                    if (maxVertices > 0 && int(vertices.size() + 2) > maxVertices)
+                        break;
+                    const QVector3D a = corners[edge[0]];
+                    const QVector3D b = corners[edge[1]];
+                    vertices.push_back({ a.x(), a.y(), a.z() });
+                    vertices.push_back({ b.x(), b.y(), b.z() });
                 }
             }
+
+            m_selectionVertexCount = int(vertices.size());
+            m_selectionCacheValid = true;
         }
 
-        for (auto it = boundsByGroup.cbegin(); it != boundsByGroup.cend(); ++it)
-        {
-            if (!it.value().hasBounds)
-                continue;
-            const QVector3D minV = it.value().minV;
-            const QVector3D maxV = it.value().maxV;
-            const QVector3D corners[8] = {
-                { minV.x(), minV.y(), minV.z() },
-                { maxV.x(), minV.y(), minV.z() },
-                { maxV.x(), maxV.y(), minV.z() },
-                { minV.x(), maxV.y(), minV.z() },
-                { minV.x(), minV.y(), maxV.z() },
-                { maxV.x(), minV.y(), maxV.z() },
-                { maxV.x(), maxV.y(), maxV.z() },
-                { minV.x(), maxV.y(), maxV.z() }
-            };
-            for (const auto &edge : edges)
-            {
-                if (maxVertices > 0 && int(vertices.size() + 2) > maxVertices)
-                    break;
-                const QVector3D a = corners[edge[0]];
-                const QVector3D b = corners[edge[1]];
-                vertices.push_back({ a.x(), a.y(), a.z() });
-                vertices.push_back({ b.x(), b.y(), b.z() });
-            }
-        }
-
-        if (!vertices.empty())
+        if (m_selectionVertexCount > 0)
         {
             QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
             QMatrix4x4 viewProj = ctx.rhi->rhi()->clipSpaceCorrMatrix()
@@ -493,7 +570,11 @@ void PassLighting::execute(FrameContext &ctx)
             u->updateDynamicBuffer(m_selectionUbo, 0, mat4Size, viewProj.constData());
             u->updateDynamicBuffer(m_selectionDepthUbo, 0, sizeof(depthParams), &depthParams);
             u->updateDynamicBuffer(m_selectionScreenUbo, 0, sizeof(screenParams), &screenParams);
-            u->updateDynamicBuffer(m_selectionVbuf, 0, int(vertices.size() * sizeof(SelectionVertex)), vertices.data());
+            if (selectionDirty && !vertices.empty())
+            {
+                u->updateDynamicBuffer(m_selectionVbuf, 0,
+                                       int(vertices.size() * sizeof(SelectionVertex)), vertices.data());
+            }
             cb->resourceUpdate(u);
 
             cb->setGraphicsPipeline(m_selectionPipeline);
@@ -501,9 +582,15 @@ void PassLighting::execute(FrameContext &ctx)
             cb->setShaderResources(m_selectionSrb);
             const QRhiCommandBuffer::VertexInput vbufBinding(m_selectionVbuf, 0);
             cb->setVertexInput(0, 1, &vbufBinding);
-            cb->draw(quint32(vertices.size()));
+            cb->draw(quint32(m_selectionVertexCount));
         }
     }
+    else if (!anySelected && m_selectionAnySelected)
+    {
+        m_selectionVertexCount = 0;
+        m_selectionCacheValid = true;
+    }
+    m_selectionAnySelected = anySelected;
 
     cb->endPass();
 }
@@ -576,6 +663,9 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     delete m_selectionSrb;
     m_selectionSrb = nullptr;
     m_selectionRpDesc = nullptr;
+    m_selectionCacheValid = false;
+    m_selectionVertexCount = 0;
+    m_selectionAnySelected = false;
     delete m_lightsUbo;
     m_lightsUbo = nullptr;
     delete m_cameraUbo;
@@ -594,6 +684,8 @@ void PassLighting::ensurePipeline(FrameContext &ctx)
     m_spotShadowMapArray = nullptr;
     for (QString &path : m_spotGoboPaths)
         path = QString();
+    m_lastFlip = QVector4D(-1.0f, -1.0f, 0.0f, 0.0f);
+    m_lightCullParamsValid = false;
 
     m_sampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Linear, QRhiSampler::Linear, QRhiSampler::None,
                                            QRhiSampler::ClampToEdge, QRhiSampler::ClampToEdge);
@@ -888,6 +980,8 @@ void PassLighting::ensureSelectionBoxesPipeline(FrameContext &ctx, QRhiRenderTar
     m_selectionDepthUbo = nullptr;
     delete m_selectionScreenUbo;
     m_selectionScreenUbo = nullptr;
+    m_selectionCacheValid = false;
+    m_selectionVertexCount = 0;
 
     const quint32 mat4Size = 16 * sizeof(float);
     m_selectionUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, mat4Size);

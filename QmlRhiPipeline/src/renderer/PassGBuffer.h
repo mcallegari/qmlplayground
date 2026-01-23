@@ -25,6 +25,7 @@ private:
     QRhiTexture *m_defaultNormal = nullptr;
     QRhiTexture *m_defaultMetallicRoughness = nullptr;
     QRhiSampler *m_linearSampler = nullptr;
+    QRhiSampler *m_videoSampler = nullptr;
     bool m_defaultBaseColorUploaded = false;
     bool m_defaultNormalUploaded = false;
     bool m_defaultMetallicRoughnessUploaded = false;

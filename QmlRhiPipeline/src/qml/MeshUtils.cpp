@@ -58,6 +58,26 @@ Mesh createUnitCubeMesh()
     return mesh;
 }
 
+Mesh createUnitQuadMesh()
+{
+    Mesh mesh;
+    const float h = 0.5f;
+    mesh.vertices = {
+        { -h, -h, 0.0f,  0.0f, 0.0f, 1.0f,  0.0f, 1.0f },
+        {  h, -h, 0.0f,  0.0f, 0.0f, 1.0f,  1.0f, 1.0f },
+        {  h,  h, 0.0f,  0.0f, 0.0f, 1.0f,  1.0f, 0.0f },
+        { -h,  h, 0.0f,  0.0f, 0.0f, 1.0f,  0.0f, 0.0f }
+    };
+    mesh.indices = { 0, 1, 2, 0, 2, 3 };
+    mesh.indexCount = mesh.indices.size();
+    mesh.modelMatrix.setToIdentity();
+    mesh.baseModelMatrix = mesh.modelMatrix;
+    mesh.boundsMin = QVector3D(-h, -h, 0.0f);
+    mesh.boundsMax = QVector3D(h, h, 0.0f);
+    mesh.boundsValid = true;
+    return mesh;
+}
+
 Mesh createSphereMesh(float radius, int rings, int sectors)
 {
     Mesh mesh;

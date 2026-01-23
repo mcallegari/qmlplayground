@@ -6,6 +6,7 @@ namespace RhiQmlUtils
 {
 
 Mesh createUnitCubeMesh();
+Mesh createUnitQuadMesh();
 Mesh createSphereMesh(float radius = 0.5f, int rings = 16, int sectors = 24);
 Mesh createArcMesh(float majorRadius, float tubeRadius,
                    float startAngle, float endAngle,

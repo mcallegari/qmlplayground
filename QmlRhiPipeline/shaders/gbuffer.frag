@@ -44,5 +44,5 @@ void main()
     outG0 = vec4(baseColor, metalness);
     outG1 = vec4(worldNormal * 0.5 + 0.5, roughness);
     outG2 = vec4(vWorldPos, uMat.roughnessOcclusion.y);
-    outG3 = vec4(uMat.emissive.xyz, 1.0);
+    outG3 = vec4(uMat.emissive.xyz * baseColorTex, 1.0);
 }

@@ -17,6 +17,8 @@ public:
     float farPlane() const { return m_far; }
     float fovYDegrees() const { return m_fovY; }
     float aspect() const { return m_aspect; }
+    bool isDirty() const { return m_dirty; }
+    void clearDirty() { m_dirty = false; }
 
 private:
     QMatrix4x4 m_view;
@@ -26,4 +28,5 @@ private:
     float m_far = 1000.0f;
     float m_fovY = 60.0f;
     float m_aspect = 1.0f;
+    bool m_dirty = true;
 };

@@ -3,6 +3,9 @@
 #include "core/RenderGraph.h"
 #include <QtCore/QString>
 #include <QtCore/QSize>
+#include <QtCore/QHash>
+#include <QtGui/QImage>
+#include <QtGui/QVector4D>
 
 class QRhiBuffer;
 class QRhiGraphicsPipeline;
@@ -23,6 +26,7 @@ private:
     void ensurePipeline(FrameContext &ctx);
     void ensureSelectionBoxesPipeline(FrameContext &ctx, QRhiRenderTarget *rt);
     void updateGoboTextures(FrameContext &ctx, QRhiResourceUpdateBatch *u);
+    QImage loadGoboCached(const QString &path);
 
     QRhiGraphicsPipeline *m_pipeline = nullptr;
     QRhiShaderResourceBindings *m_srb = nullptr;
@@ -49,8 +53,15 @@ private:
     QRhiTexture *m_spotGoboMap = nullptr;
     QString m_spotGoboPaths[kMaxLights];
     QSize m_spotGoboSize = QSize(256, 256);
+    QHash<QString, QImage> m_goboCache;
     bool m_reverseZ = false;
     bool m_useLightCulling = false;
+    QVector4D m_lastFlip = QVector4D(-1.0f, -1.0f, 0.0f, 0.0f);
+    QVector4D m_lastLightCullScreen = QVector4D();
+    QVector4D m_lastLightCullCluster = QVector4D();
+    QVector4D m_lastLightCullZParams = QVector4D();
+    QVector4D m_lastLightCullFlags = QVector4D();
+    bool m_lightCullParamsValid = false;
 
     QRhiGraphicsPipeline *m_selectionPipeline = nullptr;
     QRhiShaderResourceBindings *m_selectionSrb = nullptr;
@@ -60,6 +71,9 @@ private:
     QRhiBuffer *m_selectionVbuf = nullptr;
     QRhiRenderPassDescriptor *m_selectionRpDesc = nullptr;
     int m_selectionMaxVertices = 0;
+    int m_selectionVertexCount = 0;
+    bool m_selectionCacheValid = false;
+    bool m_selectionAnySelected = false;
 
 
 };
