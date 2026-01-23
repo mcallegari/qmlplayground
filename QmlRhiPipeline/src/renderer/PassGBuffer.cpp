@@ -197,7 +197,7 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
     {
         m_linearSampler = ctx.rhi->rhi()->newSampler(QRhiSampler::Linear,
                                                      QRhiSampler::Linear,
-                                                     QRhiSampler::Linear,
+                                                     QRhiSampler::None,
                                                      QRhiSampler::Repeat,
                                                      QRhiSampler::Repeat);
         if (!m_linearSampler->create())

@@ -21,6 +21,7 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
 #include <assimp/postprocess.h>
 #include <assimp/material.h>
 #include <functional>
+#include <QtCore/QByteArray>
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QLatin1Char>
@@ -97,6 +98,25 @@ static bool loadTextureFromPath(const aiScene *scene,
     if (texturePath.length == 0)
         return false;
     const QString texString = QString::fromUtf8(texturePath.C_Str());
+    if (texString.startsWith(QLatin1String("data:"), Qt::CaseInsensitive))
+    {
+        const int comma = texString.indexOf(QLatin1Char(','));
+        if (comma <= 0)
+            return false;
+        const QString meta = texString.left(comma);
+        const QString payload = texString.mid(comma + 1);
+        if (!meta.contains(QLatin1String(";base64"), Qt::CaseInsensitive))
+            return false;
+        const QByteArray decoded = QByteArray::fromBase64(payload.toUtf8());
+        QImage image = QImage::fromData(decoded);
+        if (!image.isNull())
+        {
+            outPath.clear();
+            outImage = image.convertToFormat(QImage::Format_RGBA8888);
+            return true;
+        }
+        return false;
+    }
     if (texString.startsWith(QLatin1Char('*')))
     {
         bool ok = false;
@@ -195,6 +215,8 @@ static void readMaterial(const aiScene *scene, const QString &modelPath, const a
     loadTextureForType(scene, modelPath, mat, aiTextureType_BASE_COLOR, out.baseColorMapPath, out.baseColorMap);
     if (out.baseColorMap.isNull())
         loadTextureForType(scene, modelPath, mat, aiTextureType_DIFFUSE, out.baseColorMapPath, out.baseColorMap);
+    if (out.baseColorMap.isNull())
+        ; // no base color map
 
     loadTextureForType(scene, modelPath, mat, aiTextureType_NORMALS, out.normalMapPath, out.normalMap);
     if (out.normalMap.isNull())
@@ -268,11 +290,16 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
             QVector3D maxV;
             bool haveBounds = false;
 
+            const bool flipV = resolvedPath.endsWith(QLatin1String(".gltf"), Qt::CaseInsensitive)
+                    || resolvedPath.endsWith(QLatin1String(".glb"), Qt::CaseInsensitive);
             for (unsigned int v = 0; v < m->mNumVertices; ++v)
             {
                 const aiVector3D pos = m->mVertices[v];
                 const aiVector3D nrm = m->HasNormals() ? m->mNormals[v] : aiVector3D(0.0f, 1.0f, 0.0f);
-                const aiVector3D uv = m->HasTextureCoords(0) ? m->mTextureCoords[0][v] : aiVector3D(0.0f, 0.0f, 0.0f);
+                const bool hasUv0 = m->HasTextureCoords(0);
+                aiVector3D uv = hasUv0 ? m->mTextureCoords[0][v] : aiVector3D(0.0f, 0.0f, 0.0f);
+                if (flipV)
+                    uv.y = 1.0f - uv.y;
                 Vertex vert;
                 vert.px = pos.x;
                 vert.py = pos.y;
