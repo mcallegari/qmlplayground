@@ -137,7 +137,7 @@ void PassPost::ensureGizmoMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourc
     }
     if (!mesh.materialUbo)
     {
-        mesh.materialUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D) * 3);
+        mesh.materialUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D) * 4);
         if (!mesh.materialUbo->create())
             return;
     }

@@ -20,6 +20,12 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
 #include <assimp/scene.h>
 #include <assimp/postprocess.h>
 #include <assimp/material.h>
+#include <assimp/config.h>
+#if __has_include(<assimp/GltfMaterial.h>)
+#include <assimp/GltfMaterial.h>
+#elif __has_include(<assimp/pbrmaterial.h>)
+#include <assimp/pbrmaterial.h>
+#endif
 #include <functional>
 #include <QtCore/QByteArray>
 #include <QtCore/QDir>
@@ -197,9 +203,15 @@ static void readMaterial(const aiScene *scene, const QString &modelPath, const a
 {
     aiColor4D color;
     if (aiGetMaterialColor(mat, AI_MATKEY_BASE_COLOR, &color) == AI_SUCCESS)
+    {
         out.baseColor = QVector3D(color.r, color.g, color.b);
+        out.baseAlpha = color.a;
+    }
     else if (aiGetMaterialColor(mat, AI_MATKEY_COLOR_DIFFUSE, &color) == AI_SUCCESS)
+    {
         out.baseColor = QVector3D(color.r, color.g, color.b);
+        out.baseAlpha = color.a;
+    }
 
     float metallic = 0.0f;
     if (aiGetMaterialFloat(mat, AI_MATKEY_METALLIC_FACTOR, &metallic) == AI_SUCCESS)
@@ -208,6 +220,12 @@ static void readMaterial(const aiScene *scene, const QString &modelPath, const a
     float roughness = 0.5f;
     if (aiGetMaterialFloat(mat, AI_MATKEY_ROUGHNESS_FACTOR, &roughness) == AI_SUCCESS)
         out.roughness = roughness;
+
+#ifdef AI_MATKEY_GLTF_OCCLUSION_STRENGTH
+    float occlusionStrength = 1.0f;
+    if (aiGetMaterialFloat(mat, AI_MATKEY_GLTF_OCCLUSION_STRENGTH, &occlusionStrength) == AI_SUCCESS)
+        out.occlusion = occlusionStrength;
+#endif
 
     if (aiGetMaterialColor(mat, AI_MATKEY_COLOR_EMISSIVE, &color) == AI_SUCCESS)
         out.emissive = QVector3D(color.r, color.g, color.b);
@@ -221,6 +239,9 @@ static void readMaterial(const aiScene *scene, const QString &modelPath, const a
     loadTextureForType(scene, modelPath, mat, aiTextureType_NORMALS, out.normalMapPath, out.normalMap);
     if (out.normalMap.isNull())
         loadTextureForType(scene, modelPath, mat, aiTextureType_HEIGHT, out.normalMapPath, out.normalMap);
+
+    loadTextureForType(scene, modelPath, mat, aiTextureType_LIGHTMAP, out.occlusionMapPath, out.occlusionMap);
+    loadTextureForType(scene, modelPath, mat, aiTextureType_EMISSIVE, out.emissiveMapPath, out.emissiveMap);
 
     QString metalPath;
     QString roughPath;
@@ -245,6 +266,30 @@ static void readMaterial(const aiScene *scene, const QString &modelPath, const a
         loadTextureForType(scene, modelPath, mat, aiTextureType_UNKNOWN,
                            out.metallicRoughnessMapPath, out.metallicRoughnessMap);
     }
+
+    int twoSided = 0;
+    if (aiGetMaterialInteger(mat, AI_MATKEY_TWOSIDED, &twoSided) == AI_SUCCESS)
+        out.doubleSided = (twoSided != 0);
+
+#ifdef AI_MATKEY_GLTF_ALPHAMODE
+    aiString alphaMode;
+    if (aiGetMaterialString(mat, AI_MATKEY_GLTF_ALPHAMODE, &alphaMode) == AI_SUCCESS)
+    {
+        const QString mode = QString::fromUtf8(alphaMode.C_Str()).toUpper();
+        if (mode == QLatin1String("MASK"))
+            out.alphaMode = Material::AlphaMode::Mask;
+        else if (mode == QLatin1String("BLEND"))
+            out.alphaMode = Material::AlphaMode::Blend;
+        else
+            out.alphaMode = Material::AlphaMode::Opaque;
+    }
+#endif
+
+#ifdef AI_MATKEY_GLTF_ALPHACUTOFF
+    float alphaCutoff = 0.5f;
+    if (aiGetMaterialFloat(mat, AI_MATKEY_GLTF_ALPHACUTOFF, &alphaCutoff) == AI_SUCCESS)
+        out.alphaCutoff = alphaCutoff;
+#endif
 }
 
 bool AssimpLoader::loadModel(const QString &path, Scene &scene)
@@ -258,10 +303,11 @@ bool AssimpLoader::loadModel(const QString &path, Scene &scene, bool append)
         scene.meshes().clear();
 
     Assimp::Importer importer;
+    importer.SetPropertyFloat(AI_CONFIG_PP_GSN_MAX_SMOOTHING_ANGLE, 60.0f);
     const QString resolvedPath = resolveModelPath(path);
     const aiScene *ai = importer.ReadFile(resolvedPath.toStdString(),
                                          aiProcess_Triangulate |
-                                         aiProcess_GenNormals |
+                                         aiProcess_GenSmoothNormals |
                                          aiProcess_GenUVCoords |
                                          aiProcess_CalcTangentSpace |
                                          aiProcess_JoinIdenticalVertices);

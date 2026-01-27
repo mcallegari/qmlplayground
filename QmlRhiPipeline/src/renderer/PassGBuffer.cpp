@@ -94,6 +94,7 @@ void PassGBuffer::execute(FrameContext &ctx)
         QVector4D baseColorMetal;
         QVector4D roughnessOcclusion;
         QVector4D emissive;
+        QVector4D miscParams;
     };
 
     QRhiResourceUpdateBatch *u = ctx.rhi->rhi()->nextResourceUpdateBatch();
@@ -128,6 +129,10 @@ void PassGBuffer::execute(FrameContext &ctx)
             matData.baseColorMetal = QVector4D(mesh.material.baseColor, mesh.material.metalness);
             matData.roughnessOcclusion = QVector4D(mesh.material.roughness, mesh.material.occlusion, 0.0f, 0.0f);
             matData.emissive = QVector4D(mesh.material.emissive, 0.0f);
+            matData.miscParams = QVector4D(mesh.material.baseAlpha,
+                                           mesh.material.alphaCutoff,
+                                           float(mesh.material.alphaMode),
+                                           0.0f);
             u->updateDynamicBuffer(mesh.materialUbo, 0, sizeof(MaterialData), &matData);
             mesh.materialDirty = false;
         }
@@ -136,7 +141,6 @@ void PassGBuffer::execute(FrameContext &ctx)
     cb->resourceUpdate(u);
 
     cb->beginPass(m_gbuffer.rt, clear0, dsClear);
-    cb->setGraphicsPipeline(m_pipeline);
     cb->setViewport(QRhiViewport(0, 0, m_gbuffer.rt->pixelSize().width(), m_gbuffer.rt->pixelSize().height()));
 
     for (Mesh &mesh : ctx.scene->meshes())
@@ -149,6 +153,10 @@ void PassGBuffer::execute(FrameContext &ctx)
             continue;
         if (!mesh.srb)
             continue;
+        QRhiGraphicsPipeline *pipeline = mesh.material.doubleSided ? m_pipelineTwoSided : m_pipeline;
+        if (!pipeline)
+            continue;
+        cb->setGraphicsPipeline(pipeline);
         cb->setShaderResources(mesh.srb);
         const QRhiCommandBuffer::VertexInput vbufBinding(mesh.vertexBuffer, 0);
         cb->setVertexInput(0, 1, &vbufBinding, mesh.indexBuffer, 0, QRhiCommandBuffer::IndexUInt32);
@@ -167,6 +175,8 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
 
     delete m_pipeline;
     m_pipeline = nullptr;
+    delete m_pipelineTwoSided;
+    m_pipelineTwoSided = nullptr;
     delete m_srb;
     m_srb = nullptr;
     delete m_cameraUbo;
@@ -188,7 +198,7 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
     const quint32 mat4Size = 16 * sizeof(float);
     m_cameraUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, mat4Size + sizeof(QVector4D));
     m_modelUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, mat4Size * 2);
-    m_materialUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D) * 3);
+    m_materialUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D) * 4);
 
     if (!m_cameraUbo->create() || !m_modelUbo->create() || !m_materialUbo->create())
         return;
@@ -234,6 +244,20 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
             return;
         m_defaultMetallicRoughnessUploaded = false;
     }
+    if (!m_defaultOcclusion)
+    {
+        m_defaultOcclusion = ctx.rhi->rhi()->newTexture(QRhiTexture::RGBA8, QSize(1, 1), 1);
+        if (!m_defaultOcclusion->create())
+            return;
+        m_defaultOcclusionUploaded = false;
+    }
+    if (!m_defaultEmissive)
+    {
+        m_defaultEmissive = ctx.rhi->rhi()->newTexture(QRhiTexture::RGBA8, QSize(1, 1), 1);
+        if (!m_defaultEmissive->create())
+            return;
+        m_defaultEmissiveUploaded = false;
+    }
 
     m_srb = ctx.rhi->rhi()->newShaderResourceBindings();
     m_srb->setBindings({
@@ -242,15 +266,33 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
         QRhiShaderResourceBinding::uniformBuffer(2, QRhiShaderResourceBinding::FragmentStage, m_materialUbo),
         QRhiShaderResourceBinding::sampledTexture(3, QRhiShaderResourceBinding::FragmentStage, m_defaultBaseColor, m_linearSampler),
         QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage, m_defaultNormal, m_linearSampler),
-        QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage, m_defaultMetallicRoughness, m_linearSampler)
+        QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage, m_defaultMetallicRoughness, m_linearSampler),
+        QRhiShaderResourceBinding::sampledTexture(6, QRhiShaderResourceBinding::FragmentStage, m_defaultOcclusion, m_linearSampler),
+        QRhiShaderResourceBinding::sampledTexture(7, QRhiShaderResourceBinding::FragmentStage, m_defaultEmissive, m_linearSampler)
     });
     if (!m_srb->create())
         return;
 
+    m_pipeline = createPipeline(ctx, QRhiGraphicsPipeline::Back);
+    m_pipelineTwoSided = createPipeline(ctx, QRhiGraphicsPipeline::None);
+    if (!m_pipeline || !m_pipelineTwoSided)
+    {
+        qWarning() << "PassGBuffer: failed to create pipeline";
+        return;
+    }
+
+    m_rpDesc = m_gbuffer.rpDesc;
+}
+
+QRhiGraphicsPipeline *PassGBuffer::createPipeline(FrameContext &ctx, QRhiGraphicsPipeline::CullMode cullMode)
+{
+    if (!ctx.rhi || !m_gbuffer.rpDesc || !m_srb)
+        return nullptr;
+
     const QRhiShaderStage vs = ctx.shaders->loadStage(QRhiShaderStage::Vertex, QStringLiteral(":/shaders/gbuffer.vert.qsb"));
     const QRhiShaderStage fs = ctx.shaders->loadStage(QRhiShaderStage::Fragment, QStringLiteral(":/shaders/gbuffer.frag.qsb"));
     if (!vs.shader().isValid() || !fs.shader().isValid())
-        return;
+        return nullptr;
 
     QRhiGraphicsPipeline *pipeline = ctx.rhi->rhi()->newGraphicsPipeline();
     pipeline->setShaderStages({ vs, fs });
@@ -266,7 +308,7 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
     });
     pipeline->setVertexInputLayout(inputLayout);
     pipeline->setSampleCount(1);
-    pipeline->setCullMode(QRhiGraphicsPipeline::Back);
+    pipeline->setCullMode(cullMode);
     pipeline->setDepthTest(true);
     pipeline->setDepthWrite(true);
     pipeline->setTargetBlends({
@@ -279,13 +321,8 @@ void PassGBuffer::ensurePipeline(FrameContext &ctx)
     pipeline->setRenderPassDescriptor(m_gbuffer.rpDesc);
 
     if (!pipeline->create())
-    {
-        qWarning() << "PassGBuffer: failed to create pipeline";
-        return;
-    }
-
-    m_pipeline = pipeline;
-    m_rpDesc = m_gbuffer.rpDesc;
+        return nullptr;
+    return pipeline;
 }
 
 void PassGBuffer::ensureMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceUpdateBatch *u)
@@ -318,7 +355,7 @@ void PassGBuffer::ensureMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceU
     }
     if (!mesh.materialUbo)
     {
-        mesh.materialUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D) * 3);
+        mesh.materialUbo = ctx.rhi->rhi()->newBuffer(QRhiBuffer::Dynamic, QRhiBuffer::UniformBuffer, sizeof(QVector4D) * 4);
         if (!mesh.materialUbo->create())
             return;
     }
@@ -348,6 +385,24 @@ void PassGBuffer::ensureMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceU
                                                                     QRhiTextureSubresourceUploadDescription(mr)));
         u->uploadTexture(m_defaultMetallicRoughness, upload);
         m_defaultMetallicRoughnessUploaded = true;
+    }
+    if (m_defaultOcclusion && !m_defaultOcclusionUploaded)
+    {
+        QImage occ(1, 1, QImage::Format_RGBA8888);
+        occ.fill(Qt::white);
+        QRhiTextureUploadDescription upload(QRhiTextureUploadEntry(0, 0,
+                                                                    QRhiTextureSubresourceUploadDescription(occ)));
+        u->uploadTexture(m_defaultOcclusion, upload);
+        m_defaultOcclusionUploaded = true;
+    }
+    if (m_defaultEmissive && !m_defaultEmissiveUploaded)
+    {
+        QImage em(1, 1, QImage::Format_RGBA8888);
+        em.fill(Qt::white);
+        QRhiTextureUploadDescription upload(QRhiTextureUploadEntry(0, 0,
+                                                                    QRhiTextureSubresourceUploadDescription(em)));
+        u->uploadTexture(m_defaultEmissive, upload);
+        m_defaultEmissiveUploaded = true;
     }
     if (!mesh.baseColorTexture)
     {
@@ -431,6 +486,58 @@ void PassGBuffer::ensureMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceU
     }
     if (!mesh.metallicRoughnessSampler)
         mesh.metallicRoughnessSampler = m_linearSampler;
+    if (!mesh.occlusionTexture)
+    {
+        if (!mesh.material.occlusionMap.isNull())
+        {
+            const QImage image = mesh.material.occlusionMap.convertToFormat(QImage::Format_RGBA8888);
+            if (!image.isNull())
+            {
+                mesh.occlusionTexture = ctx.rhi->rhi()->newTexture(QRhiTexture::RGBA8, image.size(), 1);
+                if (mesh.occlusionTexture->create())
+                {
+                    QRhiTextureUploadDescription upload(QRhiTextureUploadEntry(0, 0,
+                                                                                QRhiTextureSubresourceUploadDescription(image)));
+                    u->uploadTexture(mesh.occlusionTexture, upload);
+                }
+                else
+                {
+                    delete mesh.occlusionTexture;
+                    mesh.occlusionTexture = nullptr;
+                }
+            }
+        }
+        if (!mesh.occlusionTexture)
+            mesh.occlusionTexture = m_defaultOcclusion;
+    }
+    if (!mesh.occlusionSampler)
+        mesh.occlusionSampler = m_linearSampler;
+    if (!mesh.emissiveTexture)
+    {
+        if (!mesh.material.emissiveMap.isNull())
+        {
+            const QImage image = mesh.material.emissiveMap.convertToFormat(QImage::Format_RGBA8888);
+            if (!image.isNull())
+            {
+                mesh.emissiveTexture = ctx.rhi->rhi()->newTexture(QRhiTexture::RGBA8, image.size(), 1);
+                if (mesh.emissiveTexture->create())
+                {
+                    QRhiTextureUploadDescription upload(QRhiTextureUploadEntry(0, 0,
+                                                                                QRhiTextureSubresourceUploadDescription(image)));
+                    u->uploadTexture(mesh.emissiveTexture, upload);
+                }
+                else
+                {
+                    delete mesh.emissiveTexture;
+                    mesh.emissiveTexture = nullptr;
+                }
+            }
+        }
+        if (!mesh.emissiveTexture)
+            mesh.emissiveTexture = m_defaultEmissive;
+    }
+    if (!mesh.emissiveSampler)
+        mesh.emissiveSampler = m_linearSampler;
     if (!mesh.srb)
     {
         mesh.srb = ctx.rhi->rhi()->newShaderResourceBindings();
@@ -443,7 +550,11 @@ void PassGBuffer::ensureMeshBuffers(FrameContext &ctx, Mesh &mesh, QRhiResourceU
             QRhiShaderResourceBinding::sampledTexture(4, QRhiShaderResourceBinding::FragmentStage,
                                                       mesh.normalTexture, mesh.normalSampler),
             QRhiShaderResourceBinding::sampledTexture(5, QRhiShaderResourceBinding::FragmentStage,
-                                                      mesh.metallicRoughnessTexture, mesh.metallicRoughnessSampler)
+                                                      mesh.metallicRoughnessTexture, mesh.metallicRoughnessSampler),
+            QRhiShaderResourceBinding::sampledTexture(6, QRhiShaderResourceBinding::FragmentStage,
+                                                      mesh.occlusionTexture, mesh.occlusionSampler),
+            QRhiShaderResourceBinding::sampledTexture(7, QRhiShaderResourceBinding::FragmentStage,
+                                                      mesh.emissiveTexture, mesh.emissiveSampler)
         });
         if (!mesh.srb->create())
             return;

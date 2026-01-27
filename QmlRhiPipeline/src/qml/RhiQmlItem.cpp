@@ -837,7 +837,7 @@ public:
                         continue;
                     syncTransformFromItem(*record, meshItem, m_scene.meshes());
                     syncSelectionVisibilityFromItem(*record, meshItem, m_scene.meshes());
-                    const QVector3D baseColor(1.0f, 1.0f, 1.0f);
+                    const QVector3D baseColor(0.0f, 0.0f, 0.0f);
                     const QVector3D emissive(1.0f, 1.0f, 1.0f);
                     if (record->baseColor != baseColor || record->emissiveColor != emissive
                             || !qFuzzyCompare(record->metalness, 0.0f)
@@ -1460,9 +1460,20 @@ private:
                 }
                 record.videoSize = frame.size();
                 Mesh &mesh = m_scene.meshes()[record.firstMesh];
-                if (mesh.baseColorTexture != record.videoTexture)
+                bool srbDirty = false;
+                if (mesh.baseColorTexture == record.videoTexture)
                 {
-                    mesh.baseColorTexture = record.videoTexture;
+                    mesh.baseColorTexture = nullptr;
+                    mesh.baseColorSampler = nullptr;
+                    srbDirty = true;
+                }
+                if (mesh.emissiveTexture != record.videoTexture)
+                {
+                    mesh.emissiveTexture = record.videoTexture;
+                    srbDirty = true;
+                }
+                if (srbDirty)
+                {
                     if (mesh.srb)
                     {
                         delete mesh.srb;

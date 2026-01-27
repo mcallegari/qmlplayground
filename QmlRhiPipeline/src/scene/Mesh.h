@@ -26,9 +26,13 @@ struct Mesh
     QRhiTexture *baseColorTexture = nullptr;
     QRhiTexture *normalTexture = nullptr;
     QRhiTexture *metallicRoughnessTexture = nullptr;
+    QRhiTexture *occlusionTexture = nullptr;
+    QRhiTexture *emissiveTexture = nullptr;
     QRhiSampler *baseColorSampler = nullptr;
     QRhiSampler *normalSampler = nullptr;
     QRhiSampler *metallicRoughnessSampler = nullptr;
+    QRhiSampler *occlusionSampler = nullptr;
+    QRhiSampler *emissiveSampler = nullptr;
     QRhiBuffer *modelUbo = nullptr;
     QRhiBuffer *materialUbo = nullptr;
     QRhiShaderResourceBindings *srb = nullptr;
