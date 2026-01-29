@@ -44,6 +44,15 @@ void StaticLightItem::setZoom(float zoom)
     notifyParent();
 }
 
+void StaticLightItem::setGoboPath(const QString &path)
+{
+    if (m_goboPath == path)
+        return;
+    m_goboPath = path;
+    emit goboPathChanged();
+    notifyParent();
+}
+
 Light StaticLightItem::toLight() const
 {
     Light light;
@@ -57,5 +66,6 @@ Light StaticLightItem::toLight() const
     light.outerCone = coneAngle;
     light.innerCone = coneAngle * 0.8f;
     light.castShadows = true;
+    light.goboPath = m_goboPath;
     return light;
 }

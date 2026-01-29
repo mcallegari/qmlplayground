@@ -10,6 +10,7 @@ class StaticLightItem : public MeshItem
     Q_PROPERTY(QVector3D color READ color WRITE setColor NOTIFY colorChanged)
     Q_PROPERTY(float intensity READ intensity WRITE setIntensity NOTIFY intensityChanged)
     Q_PROPERTY(float zoom READ zoom WRITE setZoom NOTIFY zoomChanged)
+    Q_PROPERTY(QString goboPath READ goboPath WRITE setGoboPath NOTIFY goboPathChanged)
 
 public:
     explicit StaticLightItem(QObject *parent = nullptr);
@@ -28,6 +29,9 @@ public:
     float zoom() const { return m_zoom; }
     void setZoom(float zoom);
 
+    QString goboPath() const { return m_goboPath; }
+    void setGoboPath(const QString &path);
+
     Light toLight() const;
 
 Q_SIGNALS:
@@ -35,10 +39,12 @@ Q_SIGNALS:
     void colorChanged();
     void intensityChanged();
     void zoomChanged();
+    void goboPathChanged();
 
 private:
     QString m_path;
     QVector3D m_color = QVector3D(1.0f, 1.0f, 1.0f);
     float m_intensity = 1.0f;
     float m_zoom = 25.0f;
+    QString m_goboPath;
 };
