@@ -455,6 +455,7 @@ void main()
             vec4 beamData = uLights.lightBeam[i];
             float beamRadius = max(beamData.x, 0.001);
             int beamShape = int(beamData.y + 0.5);
+            bool hasGobo = other.z >= 0.0;
 
             vec3 axis = normalize(di.xyz);
             vec3 rayOrigin = uCamera.cameraPos.xyz - pr.xyz;
@@ -559,7 +560,7 @@ void main()
                 }
                 if (beamShape == 1)
                     density *= 2.0;
-                if (smokeNoiseEnabled) {
+                if (smokeNoiseEnabled && !hasGobo) {
                     float noiseScale = mix(0.45, 1.6, smokeAmount);
                     float noiseStrength = mix(0.08, 0.75, smokeAmount);
                     float time = uCamera.cameraPos.w;

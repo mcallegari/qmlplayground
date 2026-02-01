@@ -1,6 +1,5 @@
 #include "qml/RhiQmlItem.h"
 
-#include <QtCore/QDebug>
 #include <QtCore/QElapsedTimer>
 #include <QtCore/QTimer>
 #include <QtCore/QMetaObject>
@@ -991,6 +990,7 @@ public:
                 applySelectionGroup(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount, newRecord.firstMesh);
                 hideEmitterMeshes(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount);
                 QVector<EmitterData> emitters = collectEmitters(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount);
+
                 if (newRecord.headMesh >= 0)
                 {
                     const QVector3D axis = -m_scene.meshes()[newRecord.headMesh].modelMatrix.column(1).toVector3D();
@@ -1017,8 +1017,8 @@ public:
                 {
                     const StaticLightItem *staticLight = static_cast<const StaticLightItem *>(meshItem);
                     hideEmitterMeshes(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount);
-                    staticLightEmitters.insert(staticLight,
-                                               collectEmitters(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount));
+                    const QVector<EmitterData> emitters = collectEmitters(m_scene.meshes(), newRecord.firstMesh, newRecord.meshCount);
+                    staticLightEmitters.insert(staticLight, emitters);
                     staticLightItemTransforms.insert(staticLight, { transform.matrix, transform.rotation });
                     const auto lights = staticLight->findChildren<LightItem *>(QString(), Qt::FindChildrenRecursively);
                     for (const LightItem *lightItem : lights)
@@ -1143,6 +1143,19 @@ public:
                         light.direction = emitter.direction.normalized();
                     if (emitter.diameter > 0.0f)
                         light.beamRadius = emitter.diameter * 0.5f;
+                    if (light.beamShape == Light::BeamShapeType::ConeShape
+                            && light.beamRadius > 0.0f
+                            && light.outerCone > 1e-4f
+                            && !light.direction.isNull())
+                    {
+                        const float tanOuter = qTan(light.outerCone);
+                        if (tanOuter > 1e-4f)
+                        {
+                            const float coneOffset = light.beamRadius / tanOuter;
+                            light.position -= light.direction.normalized() * coneOffset;
+                            light.range += coneOffset;
+                        }
+                    }
                     newLights.push_back(light);
                 }
                 continue;
@@ -1169,6 +1182,19 @@ public:
                     light.direction = emitter.direction.normalized();
                 if (emitter.diameter > 0.0f)
                     light.beamRadius = emitter.diameter * 0.5f;
+                if (light.beamShape == Light::BeamShapeType::ConeShape
+                        && light.beamRadius > 0.0f
+                        && light.outerCone > 1e-4f
+                        && !light.direction.isNull())
+                {
+                    const float tanOuter = qTan(light.outerCone);
+                    if (tanOuter > 1e-4f)
+                    {
+                        const float coneOffset = light.beamRadius / tanOuter;
+                        light.position -= light.direction.normalized() * coneOffset;
+                        light.range += coneOffset;
+                    }
+                }
                 newLights.push_back(light);
             }
         }
