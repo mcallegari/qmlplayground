@@ -399,7 +399,7 @@ void main()
             vec4 worldFar = uCamera.invViewProj * clip;
             worldFar.xyz /= max(worldFar.w, 0.0001);
             rayDir = normalize(worldFar.xyz - uCamera.cameraPos.xyz);
-            rayLen = 50.0;
+            rayLen = max(uFlip.flip.z, 50.0);
         }
 
         [[dont_unroll]] for (int vi = 0; vi < count && vi < MAX_LIGHTS; ++vi) {
@@ -423,14 +423,21 @@ void main()
             float tEnd = 0.0;
             float dv = dot(rayDir, axis);
             float ow = dot(rayOrigin, axis);
+            float tAxMin = -1e20;
+            float tAxMax = 1e20;
             if (abs(dv) < 1e-6) {
                 if (ow < 0.0 || ow > pr.w)
                     continue;
+            } else {
+                float tAx0 = (-ow) / dv;
+                float tAx1 = (pr.w - ow) / dv;
+                tAxMin = min(tAx0, tAx1);
+                tAxMax = max(tAx0, tAx1);
             }
-            float tAx0 = (-ow) / max(dv, 1e-6);
-            float tAx1 = (pr.w - ow) / max(dv, 1e-6);
-            float tAxMin = min(tAx0, tAx1);
-            float tAxMax = max(tAx0, tAx1);
+            float tVolMin = max(0.0, tAxMin);
+            float tVolMax = min(rayLen, tAxMax);
+            if (tVolMax <= tVolMin)
+                continue;
             if (beamShape == 1) {
                 vec3 dPerp = rayDir - axis * dv;
                 vec3 oPerp = rayOrigin - axis * ow;
@@ -440,8 +447,8 @@ void main()
                 if (abs(a) < 1e-6) {
                     if (c > 0.0)
                         continue;
-                    tStart = max(0.0, tAxMin);
-                    tEnd = min(rayLen, tAxMax);
+                    tStart = tVolMin;
+                    tEnd = tVolMax;
                 } else {
                     float disc = b * b - 4.0 * a * c;
                     if (disc < 0.0)
@@ -451,29 +458,83 @@ void main()
                     float t1 = (-b + sqrtDisc) / (2.0 * a);
                     float tEnter = min(t0, t1);
                     float tExit = max(t0, t1);
-                    tStart = max(max(tEnter, 0.0), tAxMin);
-                    tEnd = min(min(tExit, rayLen), tAxMax);
+                    tStart = max(tEnter, tVolMin);
+                    tEnd = min(tExit, tVolMax);
                 }
             } else {
                 float cosOuter = other.x;
-                float k2 = cosOuter * cosOuter;
-                float dw = ow;
-                float vv = dot(rayDir, rayDir);
-                float vw = dot(rayDir, rayOrigin);
-                float ww = dot(rayOrigin, rayOrigin);
-                float a = dv * dv - k2 * vv;
-                float b = 2.0 * (dv * dw - k2 * vw);
-                float c = dw * dw - k2 * ww;
-                float disc = b * b - 4.0 * a * c;
-                if (abs(a) < 1e-6 || disc < 0.0)
+                float sinOuter = sqrt(max(1.0 - cosOuter * cosOuter, 0.0));
+                float tanOuter = sinOuter / max(cosOuter, 1e-4);
+                float coneK = max(tanOuter, 1e-4);
+                float apexOffset = beamRadius / coneK;
+
+                vec3 apexToOrigin = rayOrigin + axis * apexOffset;
+                float ov = dot(apexToOrigin, axis);
+                vec3 oPerp = apexToOrigin - axis * ov;
+                vec3 dPerp = rayDir - axis * dv;
+                float k2 = coneK * coneK;
+
+                float a = dot(dPerp, dPerp) - k2 * dv * dv;
+                float b = 2.0 * (dot(dPerp, oPerp) - k2 * dv * ov);
+                float c = dot(oPerp, oPerp) - k2 * ov * ov;
+
+                float cuts[4];
+                int cutCount = 0;
+                cuts[cutCount++] = tVolMin;
+                cuts[cutCount++] = tVolMax;
+
+                if (abs(a) > 1e-6) {
+                    float disc = b * b - 4.0 * a * c;
+                    if (disc >= 0.0) {
+                        float sqrtDisc = sqrt(max(disc, 0.0));
+                        float r0 = (-b - sqrtDisc) / (2.0 * a);
+                        float r1 = (-b + sqrtDisc) / (2.0 * a);
+                        if (r0 > tVolMin && r0 < tVolMax)
+                            cuts[cutCount++] = r0;
+                        if (r1 > tVolMin && r1 < tVolMax)
+                            cuts[cutCount++] = r1;
+                    }
+                } else if (abs(b) > 1e-6) {
+                    float r = -c / b;
+                    if (r > tVolMin && r < tVolMax)
+                        cuts[cutCount++] = r;
+                }
+
+                for (int p = 0; p < 4; ++p) {
+                    for (int q = p + 1; q < 4; ++q) {
+                        if (q >= cutCount)
+                            continue;
+                        if (cuts[q] < cuts[p]) {
+                            float tmp = cuts[p];
+                            cuts[p] = cuts[q];
+                            cuts[q] = tmp;
+                        }
+                    }
+                }
+
+                bool found = false;
+                for (int seg = 0; seg < 3; ++seg) {
+                    if (seg + 1 >= cutCount)
+                        continue;
+                    float segA = cuts[seg];
+                    float segB = cuts[seg + 1];
+                    if (segB <= segA + 1e-5)
+                        continue;
+                    float segMid = 0.5 * (segA + segB);
+                    float side = (a * segMid + b) * segMid + c;
+                    if (side <= 0.0) {
+                        if (!found) {
+                            tStart = segA;
+                            tEnd = segB;
+                            found = true;
+                        } else {
+                            tStart = min(tStart, segA);
+                            tEnd = max(tEnd, segB);
+                        }
+                    }
+                }
+                if (!found)
                     continue;
-                float sqrtDisc = sqrt(disc);
-                float t0 = (-b - sqrtDisc) / (2.0 * a);
-                float t1 = (-b + sqrtDisc) / (2.0 * a);
-                float tEnter = min(t0, t1);
-                float tExit = max(t0, t1);
-                tStart = max(max(tEnter, 0.0), tAxMin);
-                tEnd = min(min(tExit, rayLen), tAxMax);
             }
             if (tEnd <= tStart)
                 continue;
@@ -487,11 +548,13 @@ void main()
                 vec3 toP = p - pr.xyz;
                 float dist = length(toP);
                 float axial = dot(toP, axis);
-                if (dist > pr.w || axial <= 0.0 || axial > pr.w)
+                if (axial <= 0.0 || axial > pr.w)
+                    continue;
+                if (beamShape == 1 && dist > pr.w)
                     continue;
                 float cosInner = di.w;
                 float cone = 1.0;
-                float radial = length(cross(toP, axis));
+                float radial = length(toP - axis * axial);
                 if (beamShape == 1) {
                     cone = 1.0 - smoothstep(beamRadius * 0.98, beamRadius, radial);
                 } else {
@@ -500,22 +563,23 @@ void main()
                     float sinInner = sqrt(max(1.0 - cosInner * cosInner, 0.0));
                     float tanOuter = sinOuter / max(cosOuter, 1e-4);
                     float tanInner = sinInner / max(cosInner, 1e-4);
-                    float outerRadius = beamRadius + dist * tanOuter;
-                    float innerRadius = beamRadius + dist * tanInner;
+                    float outerRadius = beamRadius + axial * tanOuter;
+                    float innerRadius = beamRadius + axial * tanInner;
                     cone = 1.0 - smoothstep(innerRadius, outerRadius, radial);
                 }
                 if (cone <= 0.001)
                     continue;
 
+                float beamDist = (beamShape == 1) ? dist : axial;
                 float density = 0.0;
                 if (beamModel == 0) {
-                    float attenuation = 1.0 - clamp(dist / pr.w, 0.0, 1.0);
-                    float extinction = exp(-dist * 0.12);
+                    float attenuation = 1.0 - clamp(beamDist / pr.w, 0.0, 1.0);
+                    float extinction = exp(-beamDist * 0.12);
                     density = cone * attenuation * extinction * 1.5;
                 } else {
-                    float attenuation = 1.0 / max(dist * dist, 0.25);
-                    float rangeFactor = 1.0 - clamp(dist / pr.w, 0.0, 1.0);
-                    float extinction = exp(-dist * 0.02);
+                    float attenuation = 1.0 / max(beamDist * beamDist, 0.25);
+                    float rangeFactor = 1.0 - clamp(beamDist / pr.w, 0.0, 1.0);
+                    float extinction = exp(-beamDist * 0.02);
                     density = cone * attenuation * rangeFactor * extinction * 5.0;
                 }
                 if (beamShape == 1)

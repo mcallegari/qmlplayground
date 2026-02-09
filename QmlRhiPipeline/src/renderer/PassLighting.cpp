@@ -319,9 +319,10 @@ void PassLighting::execute(FrameContext &ctx)
     }
     bool flipSampleY = !ctx.rhi->rhi()->isYUpInFramebuffer();
     bool flipNdcY = !ctx.rhi->rhi()->isYUpInNDC();
+    const float cameraFar = ctx.scene ? qMax(1.0f, ctx.scene->camera().farPlane()) : 300.0f;
     const QVector4D flipData(flipSampleY ? 1.0f : 0.0f,
                              flipNdcY ? 1.0f : 0.0f,
-                             0.0f,
+                             cameraFar,
                              0.0f);
     if (flipData != m_lastFlip)
     {
