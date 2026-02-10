@@ -68,6 +68,11 @@ float hash31(vec3 p)
     return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
 }
 
+float interleavedGradientNoise(vec2 pos)
+{
+    return fract(52.9829189 * fract(dot(pos, vec2(0.06711056, 0.00583715))));
+}
+
 float noise3(vec3 p)
 {
     vec3 i = floor(p);
@@ -575,9 +580,10 @@ void main()
 
             int steps = clamp(int(other.w), 1, MAX_BEAM_STEPS);
             float stepLen = (tEnd - tStart) / float(steps);
+            float jitter = interleavedGradientNoise(gl_FragCoord.xy + 5.588238 * float(i)) * stepLen;
             vec4 spotParams = uShadow.spotShadowParams[i];
             [[dont_unroll]] for (int s = 0; s < steps && s < MAX_BEAM_STEPS; ++s) {
-                float t = tStart + (float(s) + 0.5) * stepLen;
+                float t = tStart + jitter + float(s) * stepLen;
                 vec3 p = uCamera.cameraPos.xyz + rayDir * t;
                 vec3 toP = p - pr.xyz;
                 float dist = length(toP);
@@ -618,7 +624,7 @@ void main()
                 }
                 if (beamShape == 1)
                     density *= 2.0;
-                if (smokeNoiseEnabled && !hasGobo) {
+                if (smokeNoiseEnabled) {
                     float noiseScale = mix(0.45, 1.6, smokeAmount);
                     float noiseStrength = mix(0.08, 0.75, smokeAmount);
                     float time = uCamera.cameraPos.w;
@@ -652,5 +658,6 @@ void main()
     }
     color += emissive;
     color += beam * 0.06;
-    outColor = vec4(color, 1.0);
+    float dither = (interleavedGradientNoise(gl_FragCoord.xy) - 0.5) / 255.0;
+    outColor = vec4(color + dither, 1.0);
 }
